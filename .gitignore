@@ -1,0 +1,37 @@
+# Data & checkpoints (generated, not versioned)
+**/data/*.h5
+**/artifacts/
+**/checkpoints/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+*.so
+
+# Environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OMC state
+.omc/
+**/.omc/
+.omx/
