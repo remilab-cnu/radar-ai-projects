@@ -17,8 +17,8 @@ generated with a 77 GHz FMCW radar simulator.
 
 ## Classes
 
-`walking`, `running`, `sitting`, `standing`, `falling`, `gesturing`
-(exact names defined in `shared/micro_doppler.py`)
+`walk`, `run`, `sit_down`, `fall`, `wave`, `idle`
+(defined in `shared/micro_doppler.py:ACTIVITY_LABELS`)
 
 ## Commands
 

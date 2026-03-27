@@ -24,7 +24,7 @@ x(t) = a(θ_s)·s(t) + Σ a(θ_j)·j(t) + n(t)
 
 ## Approach / Architecture
 
-CovNet (~55K 파라미터):
+CovNet (~73K 파라미터):
 
 ```
 입력: (B, 2, 8, 8) 공분산 행렬

@@ -13,7 +13,7 @@ Range-Doppler Map을 저해상도(32×32)에서 고해상도(64×64)로 복원�
 
 ## Approach / Architecture
 
-SRResNet-lite (~100K 파라미터):
+SRResNet-lite (~121K 파라미터):
 
 ```
 Conv(1→32, 3×3) → ReLU

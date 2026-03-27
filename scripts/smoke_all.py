@@ -23,7 +23,6 @@ EXPECTED_PROJECTS = [
     "p07_full_duplex_sic",
     "p08_jammer_nulling",
     "p09_rd_superres",
-    "p10_nearfield_loc",
 ]
 
 

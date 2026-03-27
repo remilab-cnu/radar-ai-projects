@@ -12,7 +12,7 @@ Given a 2-channel real/imaginary sample covariance matrix from a ULA, estimate a
 - **Input**: `(B, 2, N_rx, N_rx)` -- real/imag covariance
 - **Output**: `(B, 181)` -- pseudo-spectrum (sigmoid, values in [0,1])
 - **Loss**: BCELoss
-- **Parameters**: ~37M (N_rx=12)
+- **Parameters**: ~19.3M (N_rx=12)
 
 ## Commands
 

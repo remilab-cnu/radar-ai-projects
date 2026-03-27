@@ -16,10 +16,9 @@ Each project provides a complete pipeline: **synthetic data generation → model
 | P7 | Full-Duplex SIC | Self-interference cancellation | 302K | chirp + FIR channel |
 | P8 | Jammer Null Steering | Adaptive beamforming | 73K | DoA/array |
 | P9 | RD Super-Resolution | Range-Doppler enhancement | 121K | FMCW |
-| P10 | Near-Field Localization | Spherical-wave source finding | 6K | DoA/array (near-field) |
 
 > **P1–P4** are lecture-use examples (full-size models, shown in class).
-> **P5–P10** are student project templates (CPU-friendly, <302K parameters).
+> **P5–P9** are student project templates (CPU-friendly, <302K parameters).
 
 ## Quick Start
 
@@ -294,7 +293,7 @@ All `train.py` and `generate_data.py` files extend this parser.
 - `training_loop(model, train_dl, val_dl, criterion, optimizer, ...)` — Standard training with best-val checkpointing, timing, history JSON
 - `count_parameters(model)` — Total trainable parameter count
 
-> Note: P06, P08, P10 use custom training loops due to multi-input/multi-output architectures. See their `train.py` for documented reasons.
+> Note: P06 and P08 use custom training loops due to multi-input/multi-output architectures. See their `train.py` for documented reasons.
 
 ### `common/metrics.py` — Evaluation
 
@@ -340,7 +339,6 @@ radar-ai-projects/
 │   ├── p07_full_duplex_sic/   Full-duplex self-interference cancellation
 │   ├── p08_jammer_nulling/    Jammer null steering
 │   ├── p09_rd_superres/       Range-Doppler super-resolution
-│   └── p10_nearfield_loc/     Near-field source localization
 │       ├── README.md              Project description & instructions
 │       ├── generate_data.py       Synthetic data generation → data/*.h5
 │       ├── model.py               PyTorch model definition
@@ -356,7 +354,7 @@ radar-ai-projects/
 - PyTorch 2.0+ (CPU)
 - NumPy, SciPy, h5py, matplotlib, scikit-learn, tqdm
 
-No GPU required. Student projects (P5–P10) train in under 10 minutes on an 8-core CPU.
+No GPU required. Student projects (P5–P9) train in under 10 minutes on an 8-core CPU.
 
 ## Course
 
