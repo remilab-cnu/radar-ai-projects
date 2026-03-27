@@ -70,19 +70,6 @@ class JammerDataset(torch.utils.data.Dataset):
 
 
 # ---------------------------------------------------------------------------
-# Wrapper for training_loop compatibility
-# ---------------------------------------------------------------------------
-
-class JammerDatasetFlat(torch.utils.data.Dataset):
-    """training_loop과 호환되도록 (x, y) 쌍으로 반환.
-
-    x: (2, 8, 8) cov 만 (look_angle은 별도 처리 필요)
-    → training_loop 대신 직접 학습 루프 사용
-    """
-    pass
-
-
-# ---------------------------------------------------------------------------
 # LCMV Beamformer 유틸
 # ---------------------------------------------------------------------------
 
@@ -235,7 +222,11 @@ def evaluate_model(model: nn.Module, split: str = "test",
 
 
 # ---------------------------------------------------------------------------
-# 직접 학습 루프 (training_loop 대신 — 두 입력 필요)
+# 직접 학습 루프 (common.train_utils.training_loop 대신 사용)
+#
+# 이유: CovNet은 두 개의 입력(cov, look_angle)을 받는다.
+# common.train_utils.training_loop은 (x, y) 단일-입력 모델만 지원하므로
+# 여기서는 두 입력을 처리하는 전용 루프를 직접 구현한다.
 # ---------------------------------------------------------------------------
 
 def train_epoch(model: nn.Module, loader: DataLoader,

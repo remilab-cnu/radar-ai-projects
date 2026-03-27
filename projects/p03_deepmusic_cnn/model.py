@@ -10,6 +10,8 @@ Architecture:
 import torch
 import torch.nn as nn
 
+from common.train_utils import count_parameters
+
 
 class DeepMUSIC(nn.Module):
     """CNN-based DoA pseudo-spectrum estimator.
@@ -69,10 +71,6 @@ class DeepMUSIC(nn.Module):
         feat = self.encoder(x)
         logits = self.head(feat)
         return torch.sigmoid(logits)
-
-
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
 if __name__ == '__main__':

@@ -122,6 +122,9 @@ def load_split(split: str, device: str = "cpu"):
     return x, yp, yc, data["gain_db"], data["phase_deg"], data["snr_db"]
 
 
+# NOTE: common.train_utils.training_loop은 (x, y) 단일-입력/단일-출력 모델만 지원한다.
+# P06의 CombinedLoss는 (pred_params, true_params, x_corrupt, y_clean) 네 인수를 받아야 하므로
+# 배치마다 세 텐서를 모두 전달하는 전용 루프를 직접 구현한다.
 def train_one_epoch_iq(model, loader, criterion, optimizer, device):
     model.train()
     total_loss = 0.0

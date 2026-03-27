@@ -12,6 +12,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from common.train_utils import count_parameters
+
 
 class ConvBlock(nn.Module):
     """Conv2d x 2 + BN + ReLU."""
@@ -141,10 +143,6 @@ class FocalDiceLoss(nn.Module):
         dice_loss = 1 - dice
 
         return (1 - self.dice_weight) * focal_loss + self.dice_weight * dice_loss
-
-
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
 if __name__ == '__main__':

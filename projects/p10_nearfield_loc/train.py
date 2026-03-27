@@ -31,7 +31,7 @@ from common.hdf5_io import load_hdf5
 from common.metrics import classification_report, regression_report
 from common.seed import seed_everything
 from common.train_utils import count_parameters
-from shared.doa_utils import music_spectrum, find_spectrum_peaks
+from shared.doa_utils import find_spectrum_peaks
 
 from model import build_model
 
@@ -103,6 +103,10 @@ def compute_loss(
 
 # ─── Training helpers ──────────────────────────────────────────────────────────
 
+# NOTE: common.train_utils.training_loop은 (x, y) 단일-입력/단일-출력 모델만 지원한다.
+# NearFieldNet은 (near_logit, angle_sc, range_out) 세 출력을 가지며,
+# compute_loss가 (near_logit, angle_sc, range_out, near_label, angle_deg, range_m) 여섯 인수를
+# 받아야 하므로 전용 루프를 직접 구현한다.
 def train_one_epoch(model, loader, optimizer, device):
     model.train()
     total_loss = 0.0
@@ -177,10 +181,32 @@ def run_training(model, train_loader, val_loader, epochs, device):
     print(f"  Done. Best val loss: {best_val:.4f}")
 
 
+# ─── Near-field steering vector (matches generate_data.py) ─────────────────────
+
+def _nearfield_steering_vector(
+    theta_deg: float,
+    r_m: float,
+    N: int,
+    d_over_lam: float = 0.5,
+) -> np.ndarray:
+    """구면파 근거리 steering vector (generate_data.py의 nearfield_steering_vector와 동일)."""
+    theta = np.radians(theta_deg)
+    x_n = np.arange(N) * d_over_lam
+    src_x = r_m * np.sin(theta)
+    src_y = r_m * np.cos(theta)
+    dist_n = np.sqrt((x_n - src_x) ** 2 + src_y ** 2)
+    phase = -2 * np.pi * (dist_n - r_m)
+    return np.exp(1j * phase)
+
+
 # ─── MUSIC baseline ────────────────────────────────────────────────────────────
 
 def music_angle_estimate(x_np: np.ndarray, n_sources: int = 1) -> float:
-    """MUSIC으로 단일 각도 추정 (far-field 가정).
+    """Near-field MUSIC으로 단일 각도 추정 (구면파 모델, generate_data.py와 일치).
+
+    Near-field 조건에서 range를 모르므로 NEAR_RANGE_MIN~MAX 구간의
+    대표 거리들에서 near-field steering vector를 생성하고,
+    각 거리에서 계산된 MUSIC 스펙트럼을 평균하여 각도를 추정한다.
 
     Parameters
     ----------
@@ -197,8 +223,26 @@ def music_angle_estimate(x_np: np.ndarray, n_sources: int = 1) -> float:
 
     angles_grid = np.linspace(-90, 90, 361)
     N_rx = X.shape[0]
+
+    # Representative near-field ranges spanning NEAR_RANGE_MIN to NEAR_RANGE_MAX
+    range_grid = np.linspace(RANGE_SCALE * 0.1, RANGE_SCALE, 5)  # 0.5m ~ 5.0m
+
     try:
-        P = music_spectrum(R, N_rx, angles_grid, n_sources=n_sources)
+        eigvals, eigvecs = np.linalg.eigh(R)
+        idx = np.argsort(eigvals)[::-1]
+        eigvecs = eigvecs[:, idx]
+        En = eigvecs[:, n_sources:]  # noise subspace
+
+        # Average MUSIC spectrum over representative near-field ranges
+        P_sum = np.zeros(len(angles_grid))
+        for r_m in range_grid:
+            P_r = np.zeros(len(angles_grid))
+            for i, theta in enumerate(angles_grid):
+                a = _nearfield_steering_vector(theta, r_m, N_rx)
+                denom = np.real(a.conj() @ En @ En.conj().T @ a)
+                P_r[i] = 1.0 / (denom + 1e-20)
+            P_sum += P_r
+        P = P_sum / len(range_grid)
     except Exception:
         return 0.0
 
@@ -255,8 +299,8 @@ def evaluate(model: nn.Module, test_data: dict, device: str) -> dict:
     correct_angle = (np.abs(angle_pred_deg - angle_deg_np) < 5.0)
     joint_acc = float(np.mean(correct_cls & correct_angle))
 
-    # Baseline: MUSIC angle + threshold near/far (always predict far-field)
-    print("  Computing MUSIC baseline (may take a while)...")
+    # Baseline: near-field MUSIC angle + threshold near/far (always predict far-field)
+    print("  Computing near-field MUSIC baseline (may take a while)...")
     n_baseline = min(500, len(x_np))
     music_angles = np.array([
         music_angle_estimate(x_np[i]) for i in range(n_baseline)
@@ -274,7 +318,7 @@ def evaluate(model: nn.Module, test_data: dict, device: str) -> dict:
             "range_mae_near_m": round(range_mae_near, 3) if not np.isnan(range_mae_near) else None,
             "joint_loc_acc_5deg": round(joint_acc, 4),
         },
-        "baseline_music_farfield": {
+        "baseline_music_nearfield": {
             "near_far_f1_macro": round(baseline_cls["f1_macro"], 4),
             "near_far_accuracy": round(baseline_cls["accuracy"], 4),
             "angle_mae_deg": round(music_angle_mae, 3),

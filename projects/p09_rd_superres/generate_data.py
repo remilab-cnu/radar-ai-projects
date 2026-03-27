@@ -16,9 +16,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import argparse
 import numpy as np
 from scipy.ndimage import zoom
+
+from common.cli import base_parser
 
 from shared.fmcw_simulator import FMCWRadar, generate_scene, range_doppler_map, to_db
 from common.hdf5_io import save_hdf5
@@ -158,9 +159,7 @@ def generate_split(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="P09 RD Super-Resolution 데이터 생성")
-    parser.add_argument("--smoke", action="store_true", help="소규모 smoke 테스트")
-    parser.add_argument("--seed", type=int, default=42)
+    parser = base_parser("P09 RD Super-Resolution 데이터 생성")
     args = parser.parse_args()
 
     seed_everything(args.seed)

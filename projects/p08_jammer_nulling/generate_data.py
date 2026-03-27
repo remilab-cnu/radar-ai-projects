@@ -14,8 +14,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import argparse
 import numpy as np
+from common.cli import base_parser
 from common.hdf5_io import save_hdf5
 from common.seed import seed_everything
 from shared.doa_utils import steering_vector
@@ -191,9 +191,7 @@ def generate_split(n: int, seed: int,
 
 
 def main():
-    p = argparse.ArgumentParser(description="P08: Jammer Null Steering 데이터 생성")
-    p.add_argument("--smoke", action="store_true", help="소규모 스모크 테스트 (256/64/64)")
-    p.add_argument("--seed", type=int, default=42)
+    p = base_parser("P08: Jammer Null Steering 데이터 생성")
     args = p.parse_args()
 
     data_dir = Path(__file__).parent / "data"

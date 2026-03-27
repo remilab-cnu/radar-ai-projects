@@ -23,9 +23,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import argparse
 import numpy as np
 
+from common.cli import base_parser
 from shared.doa_utils import steering_vector
 from common.hdf5_io import save_hdf5
 from common.seed import seed_everything
@@ -199,9 +199,7 @@ def generate_split(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="P10 Near-Field 데이터 생성")
-    parser.add_argument("--smoke", action="store_true", help="소규모 smoke 테스트")
-    parser.add_argument("--seed", type=int, default=42)
+    parser = base_parser("P10 Near-Field 데이터 생성")
     args = parser.parse_args()
 
     seed_everything(args.seed)

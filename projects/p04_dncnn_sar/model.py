@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from common.train_utils import count_parameters
+
 
 class DnCNNSAR(nn.Module):
     """DnCNN-SAR: 17-layer residual CNN for SAR despeckling in log domain.
@@ -188,10 +190,6 @@ def compute_enl(img: np.ndarray, roi=None) -> float:
     if std < 1e-10:
         return float("inf")
     return float((region.mean() / std) ** 2)
-
-
-def count_parameters(model: nn.Module) -> int:
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
 if __name__ == "__main__":

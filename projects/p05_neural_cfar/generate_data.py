@@ -18,9 +18,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import argparse
 import numpy as np
 
+from common.cli import base_parser
 from shared.fmcw_simulator import FMCWRadar, range_doppler_map
 from shared.clutter_model import generate_scene_with_clutter
 from common.hdf5_io import save_hdf5
@@ -191,9 +191,7 @@ def generate_split(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="P05 Neural CFAR — 데이터 생성")
-    parser.add_argument("--smoke", action="store_true", help="소규모 smoke test")
-    parser.add_argument("--seed", type=int, default=42)
+    parser = base_parser("P05 Neural CFAR — 데이터 생성")
     parser.add_argument("--out_dir", type=str, default=None)
     args = parser.parse_args()
 
