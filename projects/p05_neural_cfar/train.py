@@ -23,8 +23,6 @@ from common.hdf5_io import load_hdf5
 from common.train_utils import training_loop, count_parameters
 from common.metrics import pd_at_pfa, classification_report
 from common.seed import seed_everything
-from shared.fmcw_simulator import ca_cfar_2d, range_doppler_map
-from shared.clutter_model import generate_scene_with_clutter
 
 BASE = Path(__file__).parent
 

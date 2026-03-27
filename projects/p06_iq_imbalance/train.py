@@ -23,7 +23,7 @@ from torch.utils.data import DataLoader, Dataset
 from common.cli import base_parser
 from common.hdf5_io import load_hdf5
 from common.train_utils import count_parameters
-from common.metrics import regression_report, nmse
+from common.metrics import nmse
 from common.seed import seed_everything
 
 BASE = Path(__file__).parent

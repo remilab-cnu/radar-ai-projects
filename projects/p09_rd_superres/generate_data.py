@@ -21,7 +21,7 @@ from scipy.ndimage import zoom
 
 from common.cli import base_parser
 
-from shared.fmcw_simulator import FMCWRadar, generate_scene, range_doppler_map, to_db
+from shared.fmcw_simulator import FMCWRadar, generate_scene, range_doppler_map
 from common.hdf5_io import save_hdf5
 from common.seed import seed_everything
 

@@ -18,7 +18,7 @@ import subprocess
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader
 
 from common.cli import base_parser
 from common.hdf5_io import load_hdf5
