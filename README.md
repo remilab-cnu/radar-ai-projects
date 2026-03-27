@@ -3,6 +3,115 @@
 Graduate-level course projects covering radar signal processing and deep learning.
 Each project provides a complete pipeline: **synthetic data generation → model training → quantitative evaluation**, all runnable on CPU.
 
+---
+
+## 🔰 처음 시작하기 (Step-by-Step)
+
+코딩이나 Git을 처음 접하는 학생을 위한 단계별 안내입니다.
+
+### Step 0: 필요한 프로그램 설치
+
+| 프로그램 | Windows 설치 | 설치 확인 (터미널) |
+|---------|-------------|-------------------|
+| Python 3.10+ | [python.org](https://www.python.org/downloads/)에서 다운로드. **설치 시 "Add Python to PATH" 체크 필수** | `python --version` |
+| Git | [git-scm.com](https://git-scm.com/download/win)에서 다운로드. 기본 옵션으로 설치 | `git --version` |
+| pip | Python 설치 시 자동 포함 | `pip --version` |
+
+> **Windows 팁:** 설치 후 **명령 프롬프트(cmd)** 또는 **PowerShell**을 열어 확인하세요.
+> 시작 메뉴에서 "cmd" 또는 "PowerShell"을 검색하면 됩니다.
+> Python을 설치했는데 `python`이 안 되면 `py` 또는 `python3`를 시도하세요.
+
+### Step 1: 레포지토리 다운로드 (git clone)
+
+```bash
+# Windows: 명령 프롬프트(cmd) 또는 PowerShell을 열고 아래 명령어를 복사-붙여넣기하세요
+cd %USERPROFILE%\Desktop
+git clone https://github.com/remilab-cnu/radar-ai-projects.git
+cd radar-ai-projects
+```
+
+> **Windows 참고:** `cd %USERPROFILE%\Desktop`은 바탕화면으로 이동합니다.
+> 원하는 폴더가 있으면 거기서 실행해도 됩니다 (예: `cd C:\Users\내이름\Documents`).
+
+> **`git clone`이란?** GitHub에 있는 코드를 내 컴퓨터로 복사하는 명령어입니다.
+> 한 번만 실행하면 됩니다. 이후에는 `cd radar-ai-projects`로 들어가기만 하면 됩니다.
+
+### Step 2: 라이브러리 설치
+
+```bash
+pip install -r requirements.txt
+```
+
+> 이 명령어는 프로젝트에 필요한 Python 패키지(numpy, torch 등)를 자동으로 설치합니다.
+> 처음 한 번만 실행하면 됩니다.
+
+### Step 3: 프로젝트 폴더로 이동
+
+```bash
+# 예시: P05 Neural CFAR 프로젝트
+cd projects/p05_neural_cfar
+
+# 폴더 내용 확인
+ls
+# → README.md  generate_data.py  model.py  train.py
+```
+
+> 각 프로젝트 폴더에는 항상 같은 4개 파일이 있습니다:
+> - `README.md` — 프로젝트 설명
+> - `generate_data.py` — 학습 데이터 생성 (시뮬레이터)
+> - `model.py` — 신경망 모델 정의
+> - `train.py` — 학습 + 평가 실행
+
+### Step 4: 빠른 동작 확인 (Smoke Test)
+
+```bash
+# 데이터 생성 + 학습 2 에폭 (1~2분 소요)
+python train.py --generate --smoke
+```
+
+> `--smoke`는 아주 작은 데이터로 빠르게 동작만 확인하는 모드입니다.
+> 에러 없이 끝나면 성공!
+
+### Step 5: 본격 학습
+
+```bash
+# 전체 데이터 생성 + 30 에폭 학습 (5~10분)
+python train.py --generate --epochs 30
+```
+
+### Step 6: 결과 확인
+
+```bash
+# 학습 결과는 artifacts/ 폴더에 저장됩니다
+ls artifacts/
+# → best_model.pt  metrics.json  history.json
+
+# 결과 수치 확인
+cat artifacts/metrics.json
+```
+
+### Step 7: 프로젝트 가이드 읽기
+
+각 프로젝트의 상세한 코드 설명과 실험 가이드는 `docs/guides/` 폴더에 있습니다.
+
+```bash
+# 브라우저에서 열기 (HTML 파일)
+# Windows: 파일 탐색기에서 docs/guides/ 폴더를 열고 HTML 파일을 더블클릭
+# Mac/Linux: open docs/guides/p05_guide.html
+```
+
+### 자주 하는 실수와 해결법
+
+| 문제 | 원인 | 해결 |
+|------|------|------|
+| `command not found: git` 또는 `'git'은(는) 인식할 수 없는 명령입니다` | Git 미설치 | [git-scm.com](https://git-scm.com/download/win)에서 설치 후 터미널 재시작 |
+| `ModuleNotFoundError: No module named 'torch'` | 패키지 미설치 | `pip install -r requirements.txt` 재실행 |
+| `FileNotFoundError: data/train.h5` | 데이터 미생성 | `--generate` 플래그 추가: `python train.py --generate --smoke` |
+| `Permission denied` | 권한 문제 | `chmod +x train.py` 또는 `python3 train.py ...`로 실행 |
+| `No such file or directory` | 잘못된 디렉토리 | `pwd`로 현재 위치 확인, `cd projects/p05_neural_cfar`로 이동 |
+
+---
+
 ## Projects
 
 | # | Title | Topic | Params | Simulator |

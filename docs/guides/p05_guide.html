@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>P05 Neural CFAR — Project Guide</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://remilab.cnu.ac.kr/share/assets/remilab-base.css">
+</head>
+<body>
+<div class="container">
+
+  <!-- ===== Header ===== -->
+  <h1>P05 Neural CFAR</h1>
+  <p>신경망 기반 레이다 표적 탐지 — 학생 프로젝트 가이드</p>
+  <p>
+    <span class="badge-blue">Graduate EE</span>
+    <span class="badge-gray">PyTorch</span>
+    <span class="badge-gray">CNN</span>
+    <span class="badge-gray">Binary Classification</span>
+  </p>
+
+  <!-- ===== Section 1: 이 프로젝트는 뭘 하는 건가요? ===== -->
+  <h2>1. 이 프로젝트는 뭘 하는 건가요?</h2>
+
+  <div class="card">
+    <h3>레이다 수신기와 탐지 문제</h3>
+    <p>
+      FMCW(Frequency-Modulated Continuous Wave) 레이다는 송신 신호와 수신 신호를 믹싱하여 <strong>Beat Signal</strong>을 만들고,
+      이를 2D FFT 처리하면 <strong>Range-Doppler Map(RDM)</strong>을 얻습니다.
+      RDM의 각 셀(cell)은 특정 거리·속도 조합에서의 반사 에너지를 나타냅니다.
+    </p>
+    <p>
+      표적이 존재하는 셀에는 주변보다 높은 에너지가 집중되고, 그렇지 않은 셀에는 클러터(clutter)와 잡음(noise)만 있습니다.
+      <strong>탐지기(detector)</strong>의 역할은 이 RDM에서 "어디에 표적이 있는가?"를 판단하는 것입니다.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>CA-CFAR의 동작 원리와 한계</h3>
+    <p>
+      전통적인 <strong>CA-CFAR(Cell-Averaging CFAR)</strong>는 Cell Under Test(CUT) 주변의 training cells 평균으로 잡음 세기를 추정하고,
+      목표 Pfa(오탐률)에 맞는 임계값 <code>T = α × 잡음추정</code>을 계산합니다.
+      CUT의 에너지가 T를 넘으면 "표적 있음"으로 판단합니다.
+    </p>
+    <div class="alert">
+      <strong>CA-CFAR의 핵심 가정:</strong> training cells의 클러터가 균일(homogeneous)하게 분포한다고 가정합니다.
+      하지만 실제 환경에서는 클러터 경계, 다중경로, 재밍 등으로 클러터가 불균일합니다.
+      이 경우 잡음 추정이 틀어지고, 오탐 또는 미탐이 급증합니다.
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Neural CFAR: 패치 기반 학습으로 해결</h3>
+    <p>
+      Neural CFAR는 CA-CFAR의 수식 기반 임계값 대신, <strong>작은 CNN이 패치 전체의 형상을 학습</strong>하여 탐지 결정을 내립니다.
+      클러터 분포를 사전에 가정하지 않고, 다양한 SNR 환경의 패치를 학습 데이터로 사용하여 비균일 클러터에도 강인합니다.
+    </p>
+    <p>
+      이 프로젝트에서 모델의 입출력은 아래와 같습니다:
+    </p>
+    <div class="figure">
+      <pre>
+RDM (Nd × Nr)
+     │
+     ▼  CUT 중심으로 15×15 영역 추출
+  ┌─────────────────┐
+  │  15×15 패치     │  ch0: noise-floor 기준 dB magnitude
+  │  (CUT 중심)     │  ch1: 패치 내 min-max 정규화
+  └─────────────────┘
+     │  (2, 15, 15)
+     ▼
+  ┌──────────┐
+  │  CNN     │  3개의 Conv-BN-ReLU 블록
+  │ (NeuralCFAR) │  GlobalAvgPool → FC
+  └──────────┘
+     │  (1,) — raw logit
+     ▼
+  sigmoid → 탐지 확률 p
+     │
+  p ≥ 0.5 → 표적 있음 (label = 1)
+  p &lt;  0.5 → 표적 없음 (label = 0)
+      </pre>
+      <p>그림 1. Neural CFAR 입출력 구조</p>
+    </div>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="kpi-value">~28K</div>
+      <div class="kpi-label">총 파라미터 수</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-value">(2, 15, 15)</div>
+      <div class="kpi-label">입력 텐서 shape</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-value">2</div>
+      <div class="kpi-label">출력 클래스 수 (표적 / 비표적)</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-value">6</div>
+      <div class="kpi-label">SNR 구간 (0~25 dB, 5 dB 간격)</div>
+    </div>
+  </div>
+
+  <!-- ===== Section 2: 코드 구조 로드맵 ===== -->
+  <h2>2. 코드 구조 로드맵</h2>
+
+  <div class="grid-3">
+    <div class="card">
+      <h3>generate_data.py</h3>
+      <p><span class="badge-blue">1단계</span></p>
+      <p>
+        FMCW 레이다 시뮬레이터를 이용해 RDM을 생성하고, 표적/비표적 15×15 패치를 추출하여
+        HDF5 파일로 저장합니다.
+      </p>
+      <p>
+        <strong>출력:</strong> <code>data/train.h5</code>, <code>data/val.h5</code>, <code>data/test.h5</code>
+      </p>
+    </div>
+    <div class="card">
+      <h3>model.py</h3>
+      <p><span class="badge-gray">2단계</span></p>
+      <p>
+        <code>NeuralCFAR</code> 클래스를 정의합니다. 3개의 Conv 블록과 GlobalAvgPool, FC 레이어로
+        구성된 소형 2D CNN입니다.
+      </p>
+      <p>
+        <strong>입력:</strong> <code>(B, 2, 15, 15)</code> &rarr; <strong>출력:</strong> <code>(B, 1)</code> logit
+      </p>
+    </div>
+    <div class="card">
+      <h3>train.py</h3>
+      <p><span class="badge-gray">3단계</span></p>
+      <p>
+        데이터 로드, 모델 학습, CA-CFAR baseline 비교, 평가 지표 계산까지 전체 파이프라인을 실행합니다.
+      </p>
+      <p>
+        <strong>출력:</strong> <code>artifacts/best_model.pt</code>, <code>artifacts/metrics.json</code>
+      </p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>어디부터 읽어야 하나?</h3>
+    <div class="alert">
+      처음 코드를 읽을 때는 <strong>generate_data.py</strong>부터 시작하세요.
+      데이터가 어떻게 생겼는지 이해해야 모델과 학습 코드가 보입니다.
+    </div>
+    <div class="figure">
+      <pre>
+[읽는 순서]
+
+generate_data.py         model.py             train.py
+─────────────────        ─────────────        ──────────────────────
+make_radar()        →    NeuralCFAR()    →    load_dataset()
+extract_patch()          forward()            training_loop()
+patch_to_channels()      build_model()        evaluate()
+generate_split()                              cfar_baseline()
+
+[실행 순서]
+
+python generate_data.py   →   data/ 에 HDF5 파일 생성
+        ↓
+python train.py           →   모델 학습 + 평가 + artifacts/ 에 결과 저장
+      </pre>
+      <p>그림 2. 파일별 역할과 실행 순서</p>
+    </div>
+  </div>
+
+  <!-- ===== Section 3: generate_data.py Walkthrough ===== -->
+  <h2>3. 데이터 생성 코드 Walkthrough — <code>generate_data.py</code></h2>
+
+  <div class="card">
+    <h3>make_radar() — FMCW 레이다 파라미터 설정</h3>
+    <pre><code>def make_radar() -&gt; FMCWRadar:
+    return FMCWRadar(
+        fc=77e9,      # 반송파 주파수: 77 GHz (자동차 레이다 대역)
+        bw=1e9,       # 스윕 대역폭: 1 GHz → 거리 해상도 ≈ 0.15 m
+        T_chirp=50e-6,# 처프 주기: 50 μs
+        N_chirps=128, # 처프 수: Doppler FFT 크기 = 128 → 속도 해상도 결정
+        fs=10e6,      # 샘플링 주파수: 10 MHz → Range FFT 크기 = 500
+        N_rx=1,       # 수신 안테나 수: 1
+    )</code></pre>
+    <p>
+      이 함수는 레이다 파라미터 객체를 하나 만듭니다.
+      <code>bw</code>(대역폭)이 클수록 거리 해상도가 좋아지고,
+      <code>N_chirps</code>가 클수록 속도 해상도가 좋아집니다.
+      시뮬레이터는 이 파라미터를 기반으로 최대 탐지 거리(<code>max_range</code>)와 최대 속도(<code>max_vel</code>)를 자동으로 계산합니다.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>extract_patch() — RDM에서 패치 추출</h3>
+    <pre><code>def extract_patch(rdm_mag: np.ndarray, r_bin: int, d_bin: int) -&gt; np.ndarray | None:
+    Nd, Nr = rdm_mag.shape      # RDM 크기: (Doppler bins, Range bins)
+    if (r_bin &lt; HALF or r_bin &gt;= Nr - HALF or   # 경계 검사
+            d_bin &lt; HALF or d_bin &gt;= Nd - HALF):
+        return None              # 패치가 RDM을 벗어나면 None
+    patch = rdm_mag[
+        d_bin - HALF: d_bin + HALF + 1,   # 중심 ± 7 → 15행
+        r_bin - HALF: r_bin + HALF + 1    # 중심 ± 7 → 15열
+    ]                            # 결과: (15, 15)
+    return patch</code></pre>
+    <p>
+      <code>HALF = 7</code>이므로 CUT를 중심으로 위아래·좌우 각 7칸을 잘라냅니다.
+      RDM 경계 근처의 CUT는 패치가 잘리므로 <code>None</code>을 반환하고 무시합니다.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>patch_to_channels() — 2채널 입력 만들기</h3>
+    <pre><code>def patch_to_channels(patch: np.ndarray) -&gt; np.ndarray:
+    # ch0: 전역 noise-floor 기준 dB magnitude (clutter_model이 이미 정규화)
+    ch0 = patch.astype(np.float32)
+
+    # ch1: 패치 내 [0, 1] min-max 정규화
+    p_min, p_max = ch0.min(), ch0.max()
+    ch1 = (ch0 - p_min) / (p_max - p_min + 1e-8)   # 분모 0 방지
+
+    return np.stack([ch0, ch1], axis=0)  # (2, 15, 15)</code></pre>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>ch0 — 전역 문맥 (Global Context)</h3>
+        <p>
+          noise-floor를 기준으로 한 dB magnitude입니다. 값이 클수록 잡음 대비 신호가 강합니다.
+          CNN이 <em>"이 패치가 절대적으로 얼마나 강한가"</em>를 파악할 수 있습니다.
+        </p>
+      </div>
+      <div class="card">
+        <h3>ch1 — 로컬 대비 (Local Contrast)</h3>
+        <p>
+          패치 내부에서만 min-max 정규화합니다. 절대적 세기와 무관하게
+          <em>"패치 내에서 중심부가 주변보다 얼마나 두드러지는가"</em>를 부각합니다.
+        </p>
+      </div>
+    </div>
+
+    <p>
+      2채널을 함께 쓰는 이유: ch0 하나만으로는 저SNR에서 표적과 강한 클러터가 구별이 어렵습니다.
+      ch1이 패치 내 상대적 구조를 알려주어 서로 보완합니다.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>generate_split() — SNR별 균형 데이터 생성</h3>
+    <pre><code>SNR_BINS = [0.0, 5.0, 10.0, 15.0, 20.0, 25.0]  # 6개 SNR 구간
+
+for bin_idx, snr_db in enumerate(snr_bins):
+    # 각 SNR bin에서 per_bin_tgt개 표적 + per_bin_noise개 비표적 생성
+    # 표적 패치: 시뮬레이터가 배치한 표적 위치(target_info)에서 추출
+    # 비표적 패치: target_mask == 0 인 셀(잡음/클러터 셀)에서 무작위 추출</code></pre>
+    <p>
+      6개 SNR 구간에서 균등하게 샘플링하므로, 학습 데이터가 특정 SNR에 편향되지 않습니다.
+      전체 split 크기는 <strong>train 24K / val 6K / test 6K</strong>(표적:비표적 = 50:50)이고,
+      smoke 모드에서는 <strong>train 256 / val 64 / test 64</strong>로 줄어듭니다.
+    </p>
+    <div class="alert">
+      <strong>"이 파라미터를 바꾸면?" 실험 제안</strong>
+      <ul>
+        <li><code>PATCH = 15</code> → <code>PATCH = 11</code>: 패치를 좁히면 CUT 주변 context가 줄어 어떻게 될까요?</li>
+        <li><code>SNR_BINS = [0.0, 5.0, 10.0, 15.0, 20.0, 25.0]</code> → <code>[0.0, 5.0, 10.0]</code>: 저SNR 구간만 학습하면 고SNR 성능이 유지될까요?</li>
+        <li>clutter_type을 <code>'mixed'</code>에서 <code>'ground'</code>나 <code>'rain'</code>으로 바꾸면 성능이 어떻게 달라지나요?</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ===== Section 4: model.py Walkthrough ===== -->
+  <h2>4. 모델 코드 Walkthrough — <code>model.py</code></h2>
+
+  <div class="card">
+    <h3>NeuralCFAR 클래스 구조</h3>
+    <pre><code>class NeuralCFAR(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.features = nn.Sequential(
+            # Block 1
+            nn.Conv2d(2, 16, kernel_size=3, padding=0, bias=False),
+            nn.BatchNorm2d(16),
+            nn.ReLU(inplace=True),
+            # Block 2
+            nn.Conv2d(16, 32, kernel_size=3, padding=0, bias=False),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            # Block 3
+            nn.Conv2d(32, 64, kernel_size=3, padding=0, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+        )
+        self.gap = nn.AdaptiveAvgPool2d(1)   # Global Average Pooling
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(64, 64),
+            nn.ReLU(inplace=True),
+            nn.Linear(64, 1),                # raw logit 출력
+        )
+
+    def forward(self, x):           # x: (B, 2, 15, 15)
+        x = self.features(x)        # feature extraction
+        x = self.gap(x)             # (B, 64, 1, 1)
+        x = self.classifier(x)      # (B, 1)
+        return x</code></pre>
+  </div>
+
+  <div class="card">
+    <h3>레이어별 Tensor Shape 변화</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>블록</th>
+          <th>레이어</th>
+          <th>입력 Shape</th>
+          <th>출력 Shape</th>
+          <th>역할</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>입력</td>
+          <td>—</td>
+          <td>(B, 2, 15, 15)</td>
+          <td>(B, 2, 15, 15)</td>
+          <td>2채널 패치</td>
+        </tr>
+        <tr>
+          <td>Block 1</td>
+          <td>Conv2d(2→16, 3×3) + BN + ReLU</td>
+          <td>(B, 2, 15, 15)</td>
+          <td>(B, 16, 13, 13)</td>
+          <td>엣지·패턴 검출</td>
+        </tr>
+        <tr>
+          <td>Block 2</td>
+          <td>Conv2d(16→32, 3×3) + BN + ReLU</td>
+          <td>(B, 16, 13, 13)</td>
+          <td>(B, 32, 11, 11)</td>
+          <td>중간 특징 결합</td>
+        </tr>
+        <tr>
+          <td>Block 2</td>
+          <td>MaxPool2d(2)</td>
+          <td>(B, 32, 11, 11)</td>
+          <td>(B, 32, 5, 5)</td>
+          <td>공간 축소 (×2)</td>
+        </tr>
+        <tr>
+          <td>Block 3</td>
+          <td>Conv2d(32→64, 3×3) + BN + ReLU</td>
+          <td>(B, 32, 5, 5)</td>
+          <td>(B, 64, 3, 3)</td>
+          <td>고수준 특징 추출</td>
+        </tr>
+        <tr>
+          <td>Block 3</td>
+          <td>MaxPool2d(2)</td>
+          <td>(B, 64, 3, 3)</td>
+          <td>(B, 64, 1, 1)</td>
+          <td>공간 축소 (×2)</td>
+        </tr>
+        <tr>
+          <td>GAP</td>
+          <td>AdaptiveAvgPool2d(1)</td>
+          <td>(B, 64, 1, 1)</td>
+          <td>(B, 64, 1, 1)</td>
+          <td>패치 전체 요약</td>
+        </tr>
+        <tr>
+          <td>분류기</td>
+          <td>Flatten + Linear(64→64) + ReLU</td>
+          <td>(B, 64)</td>
+          <td>(B, 64)</td>
+          <td>비선형 결합</td>
+        </tr>
+        <tr>
+          <td>출력</td>
+          <td>Linear(64→1)</td>
+          <td>(B, 64)</td>
+          <td>(B, 1)</td>
+          <td>탐지 logit</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3>GlobalAvgPool의 의미</h3>
+      <p>
+        Block 3까지 통과한 피처맵은 <code>(B, 64, 1, 1)</code>입니다.
+        <code>AdaptiveAvgPool2d(1)</code>은 남은 공간 차원을 하나의 숫자로 평균냅니다.
+        결과적으로 64개의 피처 채널 각각이 <em>"패치 전체에 걸친 해당 패턴의 평균 존재감"</em>으로 요약됩니다.
+        이 64차원 벡터를 FC에 넣어 최종 탐지 확률을 계산합니다.
+      </p>
+    </div>
+    <div class="card">
+      <h3>왜 2채널 입력인가?</h3>
+      <p>
+        ch0(전역 dB 크기)만 있으면 절대적 강도는 알지만 패치 내 구조를 보기 어렵습니다.
+        ch1(로컬 정규화)만 있으면 대비는 알지만 저SNR과 고SNR을 구별할 단서가 없습니다.
+        두 채널을 함께 주면 모델이 <em>"이 패치는 절대적으로도 강하고, 주변보다도 두드러진다"</em>는
+        복합 단서를 동시에 활용할 수 있습니다.
+      </p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>count_parameters() — 파라미터 수 확인</h3>
+    <pre><code># common/train_utils.py 에 정의됨
+from common.train_utils import count_parameters
+
+model = build_model()
+n = count_parameters(model)
+print(f"NeuralCFAR parameters: {n:,}")   # → NeuralCFAR parameters: 28,xxx</code></pre>
+    <p>
+      <code>count_parameters()</code>는 모델의 학습 가능한(requires_grad=True) 파라미터 수를 세는 유틸리티입니다.
+      28K는 매우 작은 모델로, CPU에서도 빠르게 학습됩니다.
+      <code>model.py</code>를 직접 실행(<code>python model.py</code>)하면 shape 검증과 파라미터 수를 즉시 확인할 수 있습니다.
+    </p>
+  </div>
+
+  <!-- ===== Section 5: train.py Walkthrough ===== -->
+  <h2>5. 학습/평가 코드 Walkthrough — <code>train.py</code></h2>
+
+  <div class="card">
+    <h3>main() 함수 흐름도</h3>
+    <div class="figure">
+      <pre>
+main()
+  │
+  ├─ args.generate? ──Yes──▶ subprocess: python generate_data.py
+  │                             (data/ 에 HDF5 파일 생성)
+  │
+  ├─ build_model() → NeuralCFAR (~28K params)
+  │
+  ├─ args.eval_only? ──No──▶  load_dataset("train"), load_dataset("val")
+  │                             DataLoader 구성 (batch_size, shuffle)
+  │                             criterion = BCEWithLogitsLoss
+  │                             optimizer = Adam
+  │                             scheduler = ReduceLROnPlateau
+  │                             training_loop(...)
+  │                               → artifacts/best_model.pt 저장
+  │
+  ├─ load_state_dict(best_model.pt)   ← 가장 좋은 체크포인트 불러오기
+  │
+  ├─ evaluate(model, x_test, y_test, snr_test)
+  │    → ROC-AUC, Balanced Accuracy, Pd@Pfa=1e-2, Pd@Pfa=1e-3
+  │    → Per-SNR Pd@Pfa (SNR bin별 분석)
+  │
+  ├─ cfar_baseline(x_np, y_np)        ← CA-CFAR와 성능 비교
+  │
+  └─ json.dump → artifacts/metrics.json
+      </pre>
+      <p>그림 3. main() 실행 흐름</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>BCEWithLogitsLoss — 손실 함수 직관적 이해</h3>
+    <pre><code>criterion = nn.BCEWithLogitsLoss()
+
+# 내부 동작 (개념):
+# p = sigmoid(logit)          ← 탐지 확률
+# loss = -[y·log(p) + (1-y)·log(1-p)]
+#
+# 표적(y=1)이고 p=0.99이면:  loss = -log(0.99) ≈ 0.01  (작음: 맞게 예측)
+# 표적(y=1)이고 p=0.01이면:  loss = -log(0.01) ≈ 4.60  (큼:  틀리게 예측)
+# 비표적(y=0)이고 p=0.01이면: loss = -log(0.99) ≈ 0.01  (작음: 맞게 예측)</code></pre>
+    <div class="alert">
+      <strong>핵심 직관:</strong> 모델이 정답에 가까운 확률을 출력할수록 loss가 0에 가까워집니다.
+      틀리게 예측할수록 loss가 커지고, optimizer는 이 loss를 줄이는 방향으로 가중치를 업데이트합니다.
+      <code>WithLogits</code>는 sigmoid를 loss 내부에서 수치적으로 안정되게 계산한다는 의미입니다.
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>cfar_baseline() — 고전 CA-CFAR와 비교</h3>
+    <pre><code>def cfar_baseline(x_np, y_np, pfa=1e-2):
+    g = 1   # guard cells: CUT 바로 옆 1칸 (표적 에너지 누설 방지)
+    t = 3   # train cells: guard 바깥 3칸 (잡음 추정에 사용)
+    # n_train_cells = (2*(g+t)+1)^2 - (2*g+1)^2 = 9^2 - 3^2 = 81 - 9 = 72
+    alpha = n_train_cells * (pfa**(-1/n_train_cells) - 1)  # CFAR 계수
+    # 각 패치에서:
+    #   center_pow = patch[7,7]^2           ← CUT 전력
+    #   noise_est  = mean(training cells^2) ← 잡음 추정
+    #   T = alpha * noise_est               ← 임계값
+    #   탐지 여부 = center_pow &gt; T</code></pre>
+    <p>
+      패치 내에서 CA-CFAR를 적용합니다. 15×15 패치 중심(7, 7)이 CUT이고,
+      중심에서 guard(1칸) + train(3칸) 안쪽 영역을 training cells로 사용합니다.
+      이 함수의 결과를 Neural CFAR의 결과와 비교하면 신경망의 이점이 수치로 드러납니다.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>평가 지표 설명</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>지표</th>
+          <th>수식</th>
+          <th>의미</th>
+          <th>목표값</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>ROC-AUC</td>
+          <td>AUC of ROC curve</td>
+          <td>임계값과 무관한 전체 탐지 성능. 1.0이 완벽, 0.5가 랜덤.</td>
+          <td>&gt; 0.92</td>
+        </tr>
+        <tr>
+          <td>Pd @ Pfa=1e-2</td>
+          <td>TP / (TP+FN) at threshold where FP/(FP+TN)=0.01</td>
+          <td>오탐률 1%일 때의 탐지 확률. 레이다 실용 지표.</td>
+          <td>&gt; 0.80</td>
+        </tr>
+        <tr>
+          <td>Pd @ Pfa=1e-3</td>
+          <td>TP / (TP+FN) at threshold where FP/(FP+TN)=0.001</td>
+          <td>오탐률 0.1%로 엄격할 때의 탐지 확률.</td>
+          <td>&gt; 0.65</td>
+        </tr>
+        <tr>
+          <td>Balanced Acc.</td>
+          <td>(Pd + specificity) / 2</td>
+          <td>표적/비표적 불균형에 강인한 정확도 지표.</td>
+          <td>&gt; 0.85</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      <strong>Pd(Detection Probability)</strong>와 <strong>Pfa(False Alarm Probability)</strong>는 레이다 시스템 설계의 핵심 지표입니다.
+      실제 레이다 수신기는 고정 임계값(0.5)이 아니라 Pfa를 목표값으로 설정하고 임계값을 역산합니다.
+      Neural CFAR도 score thresholding으로 동일하게 Pfa를 제어합니다.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>결과 파일 구조 — artifacts/</h3>
+    <pre><code>artifacts/
+  best_model.pt      ← 검증 loss가 가장 낮았던 에폭의 가중치
+  metrics.json       ← 최종 평가 결과 (아래 구조)
+
+# metrics.json 구조
+{
+  "neural_cfar": {
+    "roc_auc": 0.9412,
+    "balanced_accuracy": 0.8823,
+    "pd_at_pfa_1e2": 0.8341,
+    "pd_at_pfa_1e3": 0.6712,
+    "per_snr": {
+      "pd_pfa1e2_snr0dB":  0.5123,   ← 저SNR: 어려운 구간
+      "pd_pfa1e2_snr5dB":  0.7012,
+      "pd_pfa1e2_snr10dB": 0.8934,
+      "pd_pfa1e2_snr15dB": 0.9512,
+      "pd_pfa1e2_snr20dB": 0.9823,
+      "pd_pfa1e2_snr25dB": 0.9945    ← 고SNR: 쉬운 구간
+    }
+  },
+  "ca_cfar_baseline": {
+    "pd":                 0.6012,
+    "pfa":                0.0098,
+    "balanced_accuracy":  0.6534
+  }
+}</code></pre>
+  </div>
+
+  <!-- ===== Section 6: 직접 해보기 ===== -->
+  <h2>6. 직접 해보기</h2>
+
+  <div class="card">
+    <h3>Step 1 — Smoke Test 실행</h3>
+    <p>
+      먼저 전체 파이프라인이 정상 동작하는지 소규모로 확인합니다.
+      <code>--smoke</code> 플래그는 데이터와 에폭 수를 줄여 CPU에서도 수 분 내에 완료됩니다.
+    </p>
+    <pre><code>cd projects/p05_neural_cfar
+
+# 데이터 생성 (smoke) + 2 에폭 학습 + 평가
+python train.py --generate --smoke</code></pre>
+    <p>정상 실행이라면 아래와 유사한 출력이 나타납니다:</p>
+    <pre><code>[train] Generating 128 target + 128 no-target patches...
+[val]   Generating 32 target + 32 no-target patches...
+[test]  Generating 32 target + 32 no-target patches...
+
+[Model] NeuralCFAR  params=28,xxx
+[Train]
+  Epoch 1/2  train_loss=0.6823  val_loss=0.6541
+  Epoch 2/2  train_loss=0.6102  val_loss=0.5934
+[Eval] Neural CFAR on test set...
+  ROC-AUC:            0.xxxx
+  Balanced Accuracy:  0.xxxx
+[Saved] artifacts/metrics.json</code></pre>
+    <div class="alert">
+      smoke 결과의 수치는 데이터가 적어 낮게 나와도 정상입니다.
+      성능을 보려면 <code>--smoke</code> 없이 전체 학습(<code>--epochs 30</code>)을 실행하세요.
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Step 2 — 결과 읽는 법</h3>
+    <pre><code>cat artifacts/metrics.json</code></pre>
+    <p>출력된 JSON에서 확인할 항목:</p>
+    <table>
+      <thead>
+        <tr>
+          <th>JSON 키</th>
+          <th>의미</th>
+          <th>좋은 값</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>neural_cfar.roc_auc</code></td>
+          <td>Neural CFAR 전체 ROC-AUC</td>
+          <td>&gt; 0.92</td>
+        </tr>
+        <tr>
+          <td><code>neural_cfar.pd_at_pfa_1e2</code></td>
+          <td>Pfa=1% 조건에서의 탐지 확률</td>
+          <td>&gt; 0.80</td>
+        </tr>
+        <tr>
+          <td><code>neural_cfar.per_snr.pd_pfa1e2_snr0dB</code></td>
+          <td>0 dB SNR에서의 탐지 확률 (가장 어려운 구간)</td>
+          <td>CA-CFAR보다 높으면 성공</td>
+        </tr>
+        <tr>
+          <td><code>ca_cfar_baseline.balanced_accuracy</code></td>
+          <td>CA-CFAR 기준 Balanced Accuracy</td>
+          <td>~0.65 (목표: Neural CFAR &gt; 0.85)</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      <code>per_snr</code> 항목을 보면 SNR이 낮을수록 두 방법의 격차가 벌어지는 것을 확인할 수 있습니다.
+      이것이 Neural CFAR의 핵심 강점입니다.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>Step 3 — 실험 아이디어</h3>
+
+    <div class="grid-3">
+      <div class="card">
+        <h3>실험 A: PATCH 크기 축소</h3>
+        <p><span class="badge-blue">초급</span></p>
+        <p>
+          <code>generate_data.py</code>에서 <code>PATCH = 15</code>를 <code>PATCH = 11</code>로 변경하고
+          데이터를 다시 생성 후 학습합니다.
+        </p>
+        <p><strong>예상 결과:</strong> 패치가 작아지면 CUT 주변 context가 줄어 저SNR 성능이 저하될 수 있습니다.
+        또한 Block 3 이후 spatial size가 달라지므로 모델 구조 수정이 필요할 수 있습니다.</p>
+        <p><strong>확인 포인트:</strong> 어떤 SNR 구간에서 성능 차이가 가장 크게 나타나나요?</p>
+      </div>
+      <div class="card">
+        <h3>실험 B: SNR 범위 변경</h3>
+        <p><span class="badge-gray">중급</span></p>
+        <p>
+          <code>SNR_BINS = [0.0, 5.0, 10.0]</code>으로 좁혀서 학습 후,
+          전체 SNR 범위로 평가합니다.
+        </p>
+        <p><strong>예상 결과:</strong> 저SNR 구간에서만 학습하면 해당 구간의 성능은 올라갈 수 있지만,
+        고SNR(15~25 dB) 탐지 성능이 떨어질 수 있습니다. 또는 고SNR은 쉬워서 차이가 없을 수도 있습니다.</p>
+        <p><strong>확인 포인트:</strong> per_snr 결과에서 보이지 않은 SNR 구간의 성능은?</p>
+      </div>
+      <div class="card">
+        <h3>실험 C: Conv 채널 수 확대</h3>
+        <p><span class="badge-gray">중급</span></p>
+        <p>
+          <code>model.py</code>에서 채널 수를 <code>16→32→64</code>에서 <code>32→64→128</code>로 늘려 봅니다.
+        </p>
+        <pre><code>nn.Conv2d(2, 32, 3)   # 16→32
+nn.Conv2d(32, 64, 3)  # 32→64
+nn.Conv2d(64, 128, 3) # 64→128
+nn.Linear(128, 128)   # FC도 맞춰서</code></pre>
+        <p><strong>확인 포인트:</strong> 파라미터 수가 얼마나 늘어났나요? (<code>python model.py</code> 실행)
+        성능이 비례해서 오르나요, 아니면 과적합(overfitting)이 생기나요?</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Step 4 — 자기 프로젝트로 확장하기</h3>
+    <p>이 프로젝트를 발판으로 자신의 연구 주제로 발전시킬 수 있는 방향을 제안합니다.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>확장 방향</th>
+          <th>수정 파일</th>
+          <th>주요 변경 내용</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>실제 레이다 데이터 적용</td>
+          <td>generate_data.py, train.py</td>
+          <td>HDF5 형식만 맞추면 generate_data.py를 실제 데이터 전처리 스크립트로 교체 가능</td>
+        </tr>
+        <tr>
+          <td>다중 표적 탐지</td>
+          <td>generate_data.py, train.py</td>
+          <td>이진 분류 → 다중 레이블. patch당 표적 수 레이블 추가</td>
+        </tr>
+        <tr>
+          <td>표적 분류 (차량/보행자/자전거)</td>
+          <td>model.py, train.py</td>
+          <td>FC 출력 1 → 클래스 수. CrossEntropyLoss로 교체</td>
+        </tr>
+        <tr>
+          <td>비균일 클러터 환경 강화</td>
+          <td>generate_data.py</td>
+          <td>clutter_type, clutter_power_db 범위를 다양화하여 더 어려운 데이터 생성</td>
+        </tr>
+        <tr>
+          <td>경량화 (엣지 배포)</td>
+          <td>model.py</td>
+          <td>채널 수 감소, Depthwise Conv, 양자화(torch.quantization) 적용</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="alert">
+      <strong>핵심 원칙:</strong> 새로운 데이터나 태스크로 전환할 때는 항상 smoke test부터 돌려서
+      파이프라인이 끝까지 오류 없이 실행되는지 먼저 확인하세요.
+      성능 튜닝은 그다음입니다.
+    </div>
+  </div>
+
+  <!-- ===== Expected Results Summary ===== -->
+  <h2>기대 결과 요약</h2>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>지표</th>
+          <th>CA-CFAR (baseline)</th>
+          <th>Neural CFAR (목표)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>ROC-AUC</td>
+          <td>~0.80</td>
+          <td>&gt; 0.92</td>
+        </tr>
+        <tr>
+          <td>Pd @ Pfa=1e-2</td>
+          <td>~0.60</td>
+          <td>&gt; 0.80</td>
+        </tr>
+        <tr>
+          <td>Pd @ Pfa=1e-3</td>
+          <td>~0.40</td>
+          <td>&gt; 0.65</td>
+        </tr>
+        <tr>
+          <td>Balanced Accuracy</td>
+          <td>~0.65</td>
+          <td>&gt; 0.85</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      저 SNR(0~5 dB) 구간에서 Neural CFAR의 개선 효과가 가장 뚜렷합니다.
+      <code>per_snr</code> 결과에서 두 방법의 SNR별 격차를 반드시 확인하세요.
+    </p>
+  </div>
+
+  <!-- ===== Footer ===== -->
+  <div class="footer">
+    REMI Lab — Radar AI Project Guide &nbsp;|&nbsp; P05 Neural CFAR &nbsp;|&nbsp; Chungnam National University
+  </div>
+
+</div>
+</body>
+</html>

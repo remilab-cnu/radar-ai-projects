@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>P08 Jammer Null Steering — Project Guide</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://remilab.cnu.ac.kr/share/assets/remilab-base.css">
+</head>
+<body>
+<div class="container">
+
+  <!-- ===== Header ===== -->
+  <h1>P08 Jammer Null Steering</h1>
+  <p>신경망 기반 재머 방향 추정 및 LCMV Null Steering — 학생 프로젝트 가이드</p>
+  <p>
+    <span class="badge-blue">Graduate EE</span>
+    <span class="badge-gray">PyTorch</span>
+    <span class="badge-gray">Array Signal Processing</span>
+    <span class="badge-gray">Regression</span>
+  </p>
+
+  <!-- ===== Section 1: 이 프로젝트는 뭘 하는 건가요? ===== -->
+  <h2>1. 이 프로젝트는 뭘 하는 건가요?</h2>
+
+  <div class="card">
+    <h3>ULA 수신기와 빔포밍 기초</h3>
+    <p>
+      <strong>ULA(Uniform Linear Array)</strong>는 안테나를 일정 간격(λ/2)으로 나열한 배열 안테나입니다.
+      N개의 안테나가 동일한 신호를 수신할 때, 각 안테나에 도달하는 신호의 위상(phase)이 입사각 θ에 따라 달라집니다.
+      이 위상 차이를 이용하면 특정 방향의 신호를 강조하거나 억압하는 <strong>빔포밍(beamforming)</strong>이 가능합니다.
+    </p>
+    <p>
+      N개 안테나에서 수신된 신호 벡터 <code>x(t) ∈ ℂ^N</code>은 다음과 같이 모델링됩니다:
+    </p>
+    <div class="figure">
+      <pre>
+x(t) = a(θ_s)·s(t)  +  Σ a(θ_j)·j_k(t)  +  n(t)
+       ────────────     ─────────────────────────
+        원하는 신호         재머 신호 (1~2개) + 잡음
+
+a(θ) = [1,  e^{j·π·sin(θ)},  e^{j·2π·sin(θ)},  ...,  e^{j·(N-1)π·sin(θ)}]^T
+       ─────────────────────────────────────────────────────────────────────
+                    스티어링 벡터 (steering vector) : N×1 복소 벡터
+      </pre>
+      <p>그림 1. ULA 신호 모델. a(θ)는 방향 θ에서 오는 신호의 안테나별 위상 지연을 나타냅니다.</p>
+    </div>
+    <p>
+      스티어링 벡터 <code>a(θ)</code>의 k번째 원소 <code>e^{j·k·π·sin(θ)}</code>는,
+      안테나 간격이 λ/2일 때 k번째 안테나와 0번째 안테나 사이의 위상 차이를 나타냅니다.
+      sin(θ)가 들어가는 이유는 안테나 간격 방향 성분만 위상에 기여하기 때문입니다.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>공분산 행렬(Covariance Matrix)이란?</h3>
+    <p>
+      수신 신호 <code>x(t)</code>를 T개의 시간 샘플(스냅샷)에 걸쳐 측정하면,
+      <strong>샘플 공분산 행렬</strong> R을 추정할 수 있습니다:
+    </p>
+    <div class="figure">
+      <pre>
+R = (1/T) · X · X^H       ← X = [x(1), x(2), ..., x(T)] : N×T 행렬
+                                   X^H : X의 켤레전치(Hermitian transpose)
+
+결과: R ∈ ℂ^{N×N}  (이 프로젝트에서 N=8)
+
+R의 물리적 의미:
+  R[i,j] = 안테나 i와 안테나 j 수신 신호의 상관(correlation)
+  대각 원소 R[i,i] = 안테나 i의 수신 전력
+  재머가 강하면 → 재머 방향에 해당하는 성분이 R에 두드러짐
+      </pre>
+      <p>그림 2. 샘플 공분산 행렬의 정의와 물리적 의미</p>
+    </div>
+    <p>
+      공분산 행렬은 배열 신호처리에서 매우 중요한 정보를 담습니다.
+      재머처럼 전력이 강한 신호는 R에 그 방향 정보를 강하게 남기기 때문에,
+      R을 분석하면 재머 방향(DoA: Direction of Arrival)을 추정할 수 있습니다.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>재머 문제 — 왜 null steering이 필요한가?</h3>
+    <p>
+      재머(Jammer)는 레이다나 통신 수신기를 방해하기 위해 의도적으로 강한 신호를 송출하는 간섭원입니다.
+      JNR(Jammer-to-Noise Ratio)이 10~40 dB에 달하면, 원하는 신호가 재머에 완전히 묻힙니다.
+    </p>
+    <div class="alert">
+      <strong>핵심 문제:</strong> 수신기가 원하는 방향(θ_s)을 향해 빔을 형성해도,
+      재머가 다른 방향(θ_j)에서 매우 강하게 들어오면 SNR이 심각하게 저하됩니다.
+      해결책은 빔 패턴에 <strong>null(zero-response 방향)</strong>을 재머 방향에 배치하는 것입니다.
+    </div>
+    <p>
+      이 프로젝트의 목표: <strong>CovNet</strong>이 공분산 행렬 R에서 재머 방향 θ_j를 추정하고,
+      그 방향에 LCMV null을 배치하여 재머 억압 성능을 측정합니다.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>LCMV 빔포머 — null 배치 원리</h3>
+    <p>
+      <strong>LCMV(Linearly Constrained Minimum Variance)</strong> 빔포머는 제약 조건을 만족하면서
+      출력 전력을 최소화하는 가중치 벡터 w를 구합니다.
+    </p>
+    <div class="figure">
+      <pre>
+최적화 문제:
+  minimize   w^H · R · w      (출력 전력 최소화)
+  subject to C^H · w = f      (선형 제약)
+
+제약 행렬 C 와 목표 벡터 f:
+  C = [a(θ_s),  a(θ_j)]       (원하는 방향, null 방향 스티어링 벡터)
+  f = [1,       0      ]       (원하는 방향 응답=1, null 방향 응답=0)
+
+닫힌 형태(closed-form) 해:
+  w = R^{-1} · C · (C^H · R^{-1} · C)^{-1} · f
+
+결과:
+  w^H · a(θ_s) = 1   → 원하는 신호를 왜곡 없이 통과
+  w^H · a(θ_j) = 0   → 재머 방향 응답 = 0 (null steering)
+      </pre>
+      <p>그림 3. LCMV 빔포머 수식. θ_j 추정이 정확할수록 null depth가 깊어집니다.</p>
+    </div>
+    <p>
+      <strong>null depth(dB)</strong>는 null 방향에서의 빔 응답 전력을 dB로 나타낸 값입니다.
+      값이 낮을수록(예: -30 dB 이하) 재머가 더 잘 억압됩니다.
+      θ_j 추정이 틀리면 null이 재머를 빗나가 억압 효과가 크게 줄어듭니다.
+    </p>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="kpi-value">~73K</div>
+      <div class="kpi-label">총 파라미터 수</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-value">(2, 8, 8)</div>
+      <div class="kpi-label">공분산 행렬 입력 shape</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-value">8 elements</div>
+      <div class="kpi-label">ULA 안테나 수</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-value">sin(θ)</div>
+      <div class="kpi-label">회귀 출력 (범위 [-1, 1])</div>
+    </div>
+  </div>
+
+  <!-- ===== Section 2: 코드 구조 로드맵 ===== -->
+  <h2>2. 코드 구조 로드맵</h2>
+
+  <div class="grid-3">
+    <div class="card">
+      <h3>generate_data.py</h3>
+      <p><span class="badge-blue">1단계</span></p>
+      <p>
+        8-element ULA 수신 신호를 시뮬레이션하여 샘플 공분산 행렬을 생성하고,
+        재머 방향을 레이블로 하는 HDF5 데이터셋을 저장합니다.
+      </p>
+      <p>
+        <strong>출력:</strong> <code>data/train.h5</code>, <code>data/val.h5</code>, <code>data/test.h5</code>
+      </p>
+    </div>
+    <div class="card">
+      <h3>model.py</h3>
+      <p><span class="badge-gray">2단계</span></p>
+      <p>
+        <code>CovNet</code> 클래스를 정의합니다. 공분산 행렬을 CNN으로 처리하고,
+        look angle과 융합하여 sin(θ_jammer)를 회귀 추정합니다.
+      </p>
+      <p>
+        <strong>입력:</strong> <code>(B, 2, 8, 8)</code> + <code>(B, 1)</code> &rarr; <strong>출력:</strong> <code>(B, 1)</code>
+      </p>
+    </div>
+    <div class="card">
+      <h3>train.py</h3>
+      <p><span class="badge-gray">3단계</span></p>
+      <p>
+        학습, LCMV null depth 평가, MUSIC+LCMV 기준선 비교까지 전체 파이프라인을 실행합니다.
+      </p>
+      <p>
+        <strong>출력:</strong> <code>artifacts/best_model.pt</code>, <code>artifacts/metrics.json</code>
+      </p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>어디부터 읽어야 하나?</h3>
+    <div class="alert">
+      처음 코드를 읽을 때는 <strong>generate_data.py</strong>부터 시작하세요.
+      공분산 행렬이 어떻게 만들어지는지 이해해야 모델과 학습 코드가 보입니다.
+    </div>
+    <div class="figure">
+      <pre>
+[읽는 순서]
+
+generate_data.py         model.py              train.py
+─────────────────        ──────────────        ──────────────────────
+generate_sample()   →    CovNet()         →    JammerDataset()
+steering_vector()        forward()             train_epoch()
+generate_split()         build_model()         evaluate_model()
+                                               lcmv_null_depth()
+                                               music_lcmv_baseline()
+
+[실행 순서]
+
+python generate_data.py   →   data/ 에 HDF5 파일 생성
+        ↓
+python train.py           →   모델 학습 + 평가 + artifacts/ 에 결과 저장
+      </pre>
+      <p>그림 4. 파일별 역할과 실행 순서</p>
+    </div>
+  </div>
+
+  <!-- ===== Section 3: generate_data.py Walkthrough ===== -->
+  <h2>3. 데이터 생성 코드 Walkthrough — <code>generate_data.py</code></h2>
+
+  <div class="card">
+    <h3>steering_vector() — 스티어링 벡터 계산</h3>
+    <pre><code>from shared.doa_utils import steering_vector
+
+N_RX = 8          # ULA 안테나 수
+D_OVER_LAM = 0.5  # 안테나 간격 / 파장 (λ/2 간격)
+
+# 원하는 신호 방향의 스티어링 벡터
+a_s = steering_vector(look_angle_deg, N_RX, D_OVER_LAM)  # (8,) 복소 벡터
+
+# 재머 방향의 스티어링 벡터
+a_j = steering_vector(j_angle, N_RX, D_OVER_LAM)         # (8,) 복소 벡터</code></pre>
+    <p>
+      <code>steering_vector(θ, N, d/λ)</code>는 입사각 θ에 대한 N×1 복소 벡터를 반환합니다.
+      k번째 원소: <code>exp(j·2π·(d/λ)·k·sin(θ))</code>.
+      d/λ = 0.5이면 <code>exp(j·π·k·sin(θ))</code>가 됩니다.
+      sin(θ)의 범위가 [-1, 1]이므로 위상 지연이 [-π·k, +π·k]에 한정됩니다.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>generate_sample() — 단일 시나리오 시뮬레이션</h3>
+    <pre><code>def generate_sample(rng, n_jammers, look_angle_deg, jnr_db, snr_db,
+                    n_snapshots=100):
+    # 재머 각도: look_angle과 최소 10도 이상 분리하여 샘플링
+    jammer_angles = _sample_jammer_angles(rng, n_jammers, look_angle_deg,
+                                          min_sep=10.0)
+
+    jnr_lin = 10 ** (jnr_db / 10.0)   # JNR을 선형 스케일로 변환
+    snr_lin = 10 ** (snr_db / 10.0)   # SNR을 선형 스케일로 변환
+
+    # 수신 신호 행렬 X: (N_RX, n_snapshots)
+    X = np.zeros((N_RX, n_snapshots), dtype=np.complex64)
+
+    # 재머 신호 추가
+    for j_angle, j_pwr in zip(jammer_angles, jammer_powers):
+        a_j = steering_vector(j_angle, N_RX, D_OVER_LAM)  # (8,)
+        s_j = np.sqrt(j_pwr/2) * (rng.standard_normal(n_snapshots) +
+                                   1j*rng.standard_normal(n_snapshots))
+        X += np.outer(a_j, s_j)       # 재머 기여분: a_j * s_j^T
+
+    # 원하는 신호 추가
+    s_desired = np.sqrt(snr_lin/2) * (rng.standard_normal(n_snapshots) +
+                                       1j*rng.standard_normal(n_snapshots))
+    X += np.outer(a_s, s_desired)     # 원하는 신호 기여분
+
+    # AWGN 잡음 추가 (noise power = 1)
+    noise = (rng.standard_normal((N_RX, n_snapshots)) +
+             1j*rng.standard_normal((N_RX, n_snapshots))) / np.sqrt(2)
+    X += noise
+
+    # 샘플 공분산 행렬 추정
+    R = (X @ X.conj().T) / n_snapshots  # (8, 8) 복소 행렬
+
+    # Frobenius norm 정규화 (스케일 통일)
+    R_norm = R / (np.linalg.norm(R, 'fro') + 1e-10)
+
+    # real/imag 채널 분리 → (2, 8, 8) float32
+    cov = np.stack([R_norm.real, R_norm.imag], axis=0)</code></pre>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>왜 real/imag을 분리하나?</h3>
+        <p>
+          공분산 행렬 R은 복소수 행렬입니다. PyTorch의 Conv2d는 실수 텐서만 처리하므로,
+          real 채널(ch0)과 imag 채널(ch1)로 나눠 <code>(2, 8, 8)</code> 텐서로 만듭니다.
+          두 채널이 함께 있어야 방향 정보가 온전히 보존됩니다.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Frobenius norm 정규화란?</h3>
+        <p>
+          Frobenius norm은 행렬 원소 전체의 제곱합의 제곱근입니다:
+          <code>‖R‖_F = √(Σ|R[i,j]|²)</code>.
+          이 값으로 나누면 JNR 크기에 관계없이 R의 전체 스케일이 통일됩니다.
+          신경망 학습 안정성을 위해 필수적입니다.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>2-재머 케이스 처리</h3>
+    <pre><code># 재머 수: 1 or 2 (무작위 선택)
+n_jammers = int(rng.integers(1, 3))   # 1 또는 2
+
+# 2개일 때: 첫 번째 재머가 더 강함 (1~6 dB 차이)
+if n_jammers == 2:
+    power_diff = rng.uniform(1.0, 6.0)
+    jammer_powers = [jnr_lin, jnr_lin / (10 ** (power_diff / 10.0))]
+
+# 학습 타겟: 항상 첫 번째(강한) 재머 각도
+primary_jammer_angle = float(jammer_angles[0])</code></pre>
+    <p>
+      2-재머 케이스에서 약한 재머는 예측 목표가 아닙니다.
+      강한 재머가 공분산 행렬에 더 뚜렷이 나타나고, 실제로 억압이 더 시급하기 때문입니다.
+      모델은 항상 "가장 강한 재머"의 방향을 예측합니다.
+    </p>
+    <div class="alert">
+      <strong>"이 파라미터를 바꾸면?" 실험 제안</strong>
+      <ul>
+        <li><code>n_snapshots=100</code> → <code>n_snapshots=20</code>: 스냅샷이 줄면 공분산 추정 품질이 낮아집니다. 성능에 어떤 영향을 미치나요?</li>
+        <li><code>jnr_range=(10.0, 40.0)</code> → <code>(5.0, 15.0)</code>: JNR이 낮아지면 재머가 공분산에 덜 뚜렷이 나타납니다. 어느 구간에서 성능이 급락하나요?</li>
+        <li><code>min_sep=10.0</code> → <code>5.0</code>: look angle과 재머가 가까워지면 LCMV null과 원하는 방향이 충돌합니다. 어떤 문제가 생기나요?</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ===== Section 4: model.py Walkthrough ===== -->
+  <h2>4. 모델 코드 Walkthrough — <code>model.py</code></h2>
+
+  <div class="card">
+    <h3>CovNet 전체 구조</h3>
+    <pre><code>class CovNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.cnn = nn.Sequential(
+            # (B, 2, 8, 8) → (B, 16, 8, 8)
+            nn.Conv2d(2, 16, kernel_size=3, padding=1),  # padding=1: 공간 크기 유지
+            nn.BatchNorm2d(16),
+            nn.ReLU(inplace=True),
+            # (B, 16, 8, 8) → (B, 32, 8, 8)
+            nn.Conv2d(16, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            # (B, 32, 8, 8) → (B, 64, 8, 8)
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+        )
+
+        # (B, 64, 8, 8) → (B, 64)  : 공간 차원 평균
+        self.gap = nn.AdaptiveAvgPool2d(1)
+
+        # look_angle과 concat 후 회귀
+        self.head = nn.Sequential(
+            nn.Linear(64 + 1, 256),   # 64(CNN 피처) + 1(look_angle)
+            nn.ReLU(inplace=True),
+            nn.Linear(256, 128),
+            nn.ReLU(inplace=True),
+            nn.Linear(128, 1),        # sin(jammer_angle) 출력
+        )</code></pre>
+    <p>
+      8×8 입력에 <code>padding=1</code>인 3×3 Conv를 3번 적용해도 공간 크기(8×8)가 유지됩니다.
+      MaxPool 없이 GAP으로 공간 정보를 요약하는 이유는,
+      8×8은 이미 작은 크기이므로 추가 다운샘플링이 불필요하기 때문입니다.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>forward() — look angle 융합 방식</h3>
+    <pre><code>def forward(self, cov: torch.Tensor, look_angle: torch.Tensor) -> torch.Tensor:
+    # cov        : (B, 2, 8, 8)  — real/imag 공분산 행렬
+    # look_angle : (B, 1)        — 원하는 신호 방향 [deg]
+
+    feat = self.cnn(cov)         # (B, 64, 8, 8): CNN 피처 추출
+    feat = self.gap(feat)        # (B, 64, 1, 1): 공간 평균
+    feat = feat.flatten(1)       # (B, 64)       : 벡터화
+
+    # look_angle 정규화: [-90°, +90°] → [-1, 1]
+    look_norm = look_angle / 90.0   # (B, 1)
+
+    x = torch.cat([feat, look_norm], dim=1)  # (B, 65): CNN 피처 + look_angle 결합
+    return self.head(x)          # (B, 1): sin(jammer_angle) 예측</code></pre>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>왜 look_angle을 따로 입력하나?</h3>
+        <p>
+          재머 방향은 절대 각도가 아니라 <em>look angle에 대한 상대적 위치</em>가 중요합니다.
+          공분산 행렬만 보면 어느 방향이 "원하는 방향"인지 알 수 없으므로,
+          look_angle을 외부에서 명시적으로 알려줍니다.
+          이 정보가 없으면 모델이 재머 방향과 원하는 방향을 혼동할 수 있습니다.
+        </p>
+      </div>
+      <div class="card">
+        <h3>왜 sin(θ)를 예측하나?</h3>
+        <p>
+          각도 θ(degree)를 직접 예측하면 출력 범위가 [-60°, +60°]로 제한이 없고
+          최적화가 불안정해질 수 있습니다.
+          sin(θ)는 범위가 [-1, 1]로 자연스럽게 제한되어 학습이 안정적입니다.
+          예측 후 <code>θ = arcsin(clamp(y, -1, 1)) × 180/π</code>로 각도를 복원합니다.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>레이어별 Tensor Shape 변화</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>블록</th>
+          <th>레이어</th>
+          <th>입력 Shape</th>
+          <th>출력 Shape</th>
+          <th>역할</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>입력</td>
+          <td>—</td>
+          <td>(B, 2, 8, 8)</td>
+          <td>(B, 2, 8, 8)</td>
+          <td>공분산 real/imag</td>
+        </tr>
+        <tr>
+          <td>CNN Block 1</td>
+          <td>Conv2d(2→16, 3×3, pad=1) + BN + ReLU</td>
+          <td>(B, 2, 8, 8)</td>
+          <td>(B, 16, 8, 8)</td>
+          <td>공분산 패턴 추출</td>
+        </tr>
+        <tr>
+          <td>CNN Block 2</td>
+          <td>Conv2d(16→32, 3×3, pad=1) + BN + ReLU</td>
+          <td>(B, 16, 8, 8)</td>
+          <td>(B, 32, 8, 8)</td>
+          <td>중간 특징 결합</td>
+        </tr>
+        <tr>
+          <td>CNN Block 3</td>
+          <td>Conv2d(32→64, 3×3, pad=1) + BN + ReLU</td>
+          <td>(B, 32, 8, 8)</td>
+          <td>(B, 64, 8, 8)</td>
+          <td>고수준 방향 특징</td>
+        </tr>
+        <tr>
+          <td>GAP</td>
+          <td>AdaptiveAvgPool2d(1) + flatten</td>
+          <td>(B, 64, 8, 8)</td>
+          <td>(B, 64)</td>
+          <td>공간 요약 → 벡터</td>
+        </tr>
+        <tr>
+          <td>Fusion</td>
+          <td>Concat [feat, look_norm]</td>
+          <td>(B, 64) + (B, 1)</td>
+          <td>(B, 65)</td>
+          <td>look angle 융합</td>
+        </tr>
+        <tr>
+          <td>Head FC 1</td>
+          <td>Linear(65→256) + ReLU</td>
+          <td>(B, 65)</td>
+          <td>(B, 256)</td>
+          <td>비선형 결합</td>
+        </tr>
+        <tr>
+          <td>Head FC 2</td>
+          <td>Linear(256→128) + ReLU</td>
+          <td>(B, 256)</td>
+          <td>(B, 128)</td>
+          <td>차원 축소</td>
+        </tr>
+        <tr>
+          <td>출력</td>
+          <td>Linear(128→1)</td>
+          <td>(B, 128)</td>
+          <td>(B, 1)</td>
+          <td>sin(θ_jammer)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===== Section 5: train.py Walkthrough ===== -->
+  <h2>5. 학습/평가 코드 Walkthrough — <code>train.py</code></h2>
+
+  <div class="card">
+    <h3>main() 함수 흐름도</h3>
+    <div class="figure">
+      <pre>
+main()
+  │
+  ├─ args.generate? ──Yes──▶ subprocess: python generate_data.py
+  │                             (data/ 에 HDF5 파일 생성)
+  │
+  ├─ JammerDataset("train.h5"), JammerDataset("val.h5")
+  │    → cov (2,8,8),  look (1,),  sin_jammer (1,) 로드
+  │
+  ├─ model = CovNet()  (~73K params)
+  │
+  ├─ args.eval_only? ──No──▶  criterion = SmoothL1Loss
+  │                             optimizer = Adam
+  │                             scheduler = ReduceLROnPlateau
+  │                             train_epoch() / val_epoch() 반복
+  │                               → artifacts/best_model.pt 저장
+  │
+  ├─ load_state_dict(best_model.pt)
+  │
+  ├─ evaluate_model("test")
+  │    → angle MAE, RMSE, within ±2°, within ±5° acc
+  │    → LCMV null depth (예측 방향에 null 배치 후 측정)
+  │
+  ├─ music_lcmv_baseline("test", n_eval=300)
+  │    → MUSIC으로 재머 방향 추정 → LCMV null steering 성능
+  │
+  └─ json.dump → artifacts/metrics.json
+      </pre>
+      <p>그림 5. main() 실행 흐름</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>SmoothL1Loss — 손실 함수 직관적 이해</h3>
+    <pre><code>criterion = nn.SmoothL1Loss()
+
+# SmoothL1 (Huber Loss) 동작:
+#   |e| &lt; 1:  loss = 0.5 · e²        ← 오차가 작으면 L2처럼 부드럽게
+#   |e| ≥ 1:  loss = |e| - 0.5       ← 오차가 크면 L1처럼 이상값에 강인
+
+# e = sin(θ_pred) - sin(θ_true)
+
+# 예시:
+#   sin(θ_pred)=0.50, sin(θ_true)=0.52  → e=-0.02  loss≈0.0002  (잘 예측)
+#   sin(θ_pred)=0.50, sin(θ_true)=-0.3  → e=0.80   loss≈0.32    (크게 틀림)</code></pre>
+    <div class="alert">
+      <strong>왜 SmoothL1인가?</strong>
+      MSE(L2)는 이상값(outlier)에 지나치게 민감합니다. 재머 각도 추정에는 가끔 매우 틀린 예측이 있을 수 있고,
+      이때 SmoothL1이 학습을 더 안정적으로 유지합니다.
+      sin(θ) 공간에서의 손실이므로, 동일한 sin 오차라도 θ가 ±90° 근방에서는 각도 오차가 더 커집니다.
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>lcmv_null_depth() — null 억압 성능 측정</h3>
+    <pre><code>def lcmv_null_depth(R, look_angle_deg, null_angle_deg):
+    a_look = steering_vector(look_angle_deg, N_RX, D_OVER_LAM)  # (8,)
+    a_null = steering_vector(null_angle_deg, N_RX, D_OVER_LAM)  # (8,)
+
+    # 제약 행렬: C = [a_look, a_null], 목표: f = [1, 0]
+    C = np.stack([a_look, a_null], axis=1)  # (8, 2)
+    f = np.array([1.0, 0.0])
+
+    R_inv = np.linalg.inv(R + 1e-8 * np.eye(N_RX))  # 역행렬 (정규화 항 추가)
+    RiC = R_inv @ C
+    w = RiC @ np.linalg.inv(C.conj().T @ RiC) @ f   # LCMV 가중치 벡터
+
+    # null 방향 응답 전력 → dB 변환
+    null_response = abs(w.conj() @ a_null) ** 2
+    null_depth_db = 10 * np.log10(null_response + 1e-20)
+    return null_depth_db  # 낮을수록 좋음 (예: -40 dB)</code></pre>
+    <p>
+      이 함수는 CovNet이 예측한 각도에 null을 배치했을 때 실제로 재머가 억압되는지 측정합니다.
+      완벽하게 정확한 추정이라면 이론적으로 null depth가 <code>-∞ dB</code>에 가까워집니다.
+      실제로는 유한한 스냅샷 수와 추정 오차로 인해 -30 ~ -40 dB 수준이면 우수한 성능입니다.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>MUSIC + LCMV 기준선</h3>
+    <pre><code>def music_lcmv_baseline(split="test", n_eval=500):
+    angle_grid = np.linspace(-90, 90, 361)  # 탐색 각도 격자
+
+    for i in range(n_eval):
+        R = cov_2ch[0] + 1j * cov_2ch[1]   # real/imag → 복소 공분산
+
+        # MUSIC 스펙트럼 계산 (재머 수 + 원하는 신호 = n_sources)
+        P = music_spectrum(R, N_RX, angle_grid, n_sources=n_jam + 1)
+        peaks = find_spectrum_peaks(P, angle_grid, n_sources=n_jam + 1)
+
+        # look_angle 근처 피크 제거 → 나머지 최대 피크 = 재머 추정
+        jammer_cands = [a for a in peaks if abs(a - look_deg) &gt; 5.0]
+        est_jammer = jammer_cands[0] if jammer_cands else angle_grid[np.argmax(P)]</code></pre>
+    <p>
+      <strong>MUSIC(Multiple Signal Classification)</strong>은 공분산 행렬의 고유값 분해(eigendecomposition)를
+      이용한 고해상도 DoA 추정 알고리즘입니다.
+      신호 부공간(signal subspace)과 잡음 부공간(noise subspace)의 직교성을 이용합니다.
+      계산량은 CovNet보다 훨씬 크지만, 이 프로젝트에서는 비교 기준선으로 사용합니다.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>평가 지표 설명</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>지표</th>
+          <th>수식</th>
+          <th>의미</th>
+          <th>목표값</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Angle MAE (deg)</td>
+          <td>mean(|θ_true - θ_pred|)</td>
+          <td>재머 각도 평균 절대 오차. 낮을수록 좋음.</td>
+          <td>&lt; 1.5 deg</td>
+        </tr>
+        <tr>
+          <td>Angle RMSE (deg)</td>
+          <td>√mean((θ_true - θ_pred)²)</td>
+          <td>큰 오차에 더 민감한 오차 지표.</td>
+          <td>&lt; 2.5 deg</td>
+        </tr>
+        <tr>
+          <td>Within ±2° Acc</td>
+          <td>mean(|error| ≤ 2°)</td>
+          <td>2도 이내로 맞춘 샘플 비율.</td>
+          <td>&gt; 0.80</td>
+        </tr>
+        <tr>
+          <td>LCMV Null Depth (dB)</td>
+          <td>10·log10(|w^H·a(θ_j)|²)</td>
+          <td>재머 방향 억압 깊이. 낮을수록 강한 억압.</td>
+          <td>&lt; -30 dB</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      <strong>Null Depth</strong>는 최종적으로 가장 중요한 지표입니다.
+      각도 MAE가 작아도 LCMV null이 재머를 제대로 억압하지 못하면 실용적 가치가 없습니다.
+      특히 look angle과 jammer angle이 가까운 케이스에서 null depth를 확인하세요.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>결과 파일 구조 — artifacts/</h3>
+    <pre><code>artifacts/
+  best_model.pt      ← 검증 loss가 가장 낮았던 에폭의 가중치
+  history.json       ← 에폭별 train/val loss
+  metrics.json       ← 최종 평가 결과 (아래 구조)
+
+# metrics.json 구조
+{
+  "model": {
+    "angle_mae_deg": 1.23,            ← CovNet 각도 MAE
+    "angle_rmse_deg": 2.01,
+    "within_2deg_acc": 0.823,         ← 2도 이내 정확도
+    "within_5deg_acc": 0.951,
+    "lcmv_null_depth_db_mean": -32.4  ← 평균 null 억압 깊이
+  },
+  "baseline_music_lcmv": {
+    "music_angle_mae_deg": 2.05,      ← MUSIC 기준선 MAE
+    "music_within2deg_acc": 0.601,
+    "music_lcmv_null_depth_db_mean": -25.1
+  }
+}</code></pre>
+  </div>
+
+  <!-- ===== Section 6: 직접 해보기 ===== -->
+  <h2>6. 직접 해보기</h2>
+
+  <div class="card">
+    <h3>Step 1 — 환경 준비</h3>
+    <p>Windows 명령 프롬프트(cmd) 또는 PowerShell에서 아래 순서로 실행합니다.</p>
+    <pre><code>cd projects\p08_jammer_nulling
+
+pip install torch numpy h5py scipy</code></pre>
+    <div class="alert">
+      <strong>경로 구분자:</strong> Windows에서는 <code>/</code> 대신 <code>\</code>를 사용합니다.
+      PowerShell과 cmd 모두 <code>python</code> 명령으로 실행하세요 (<code>python3</code>가 아닌 <code>python</code>).
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Step 2 — Smoke Test 실행</h3>
+    <p>
+      먼저 전체 파이프라인이 정상 동작하는지 소규모로 확인합니다.
+      <code>--smoke</code> 플래그는 데이터와 에폭 수를 줄여 CPU에서도 수 분 내에 완료됩니다.
+    </p>
+    <pre><code># 데이터 생성 (smoke: 256+64+64) + 2 에폭 학습 + 평가
+python train.py --generate --smoke</code></pre>
+    <p>정상 실행이라면 아래와 유사한 출력이 나타납니다:</p>
+    <pre><code>Generating train: 256 samples...
+Generating val: 64 samples...
+Generating test: 64 samples...
+
+Model parameters: 73,xxx
+Training for 2 epochs on cpu...
+  Epoch 1/2  train=0.05123  val=0.04987  2.3s
+  Epoch 2/2  train=0.04801  val=0.04612  2.1s *
+
+Evaluating model on test set...
+  angle_mae_deg: x.xxxx
+  within_2deg_acc: 0.xxxx
+  lcmv_null_depth_db_mean: -xx.xx
+
+Evaluating MUSIC+LCMV baseline (subset)...
+  music_angle_mae_deg: x.xxxx</code></pre>
+    <div class="alert">
+      smoke 결과의 수치는 데이터가 적어 낮게 나와도 정상입니다.
+      성능을 보려면 <code>--smoke</code> 없이 전체 학습(<code>--epochs 30</code>)을 실행하세요.
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Step 3 — 결과 읽는 법</h3>
+    <pre><code>type artifacts\metrics.json</code></pre>
+    <p>출력된 JSON에서 확인할 항목:</p>
+    <table>
+      <thead>
+        <tr>
+          <th>JSON 키</th>
+          <th>의미</th>
+          <th>좋은 값</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>model.angle_mae_deg</code></td>
+          <td>CovNet 평균 각도 오차</td>
+          <td>&lt; 1.5 deg</td>
+        </tr>
+        <tr>
+          <td><code>model.within_2deg_acc</code></td>
+          <td>2도 이내 정확도</td>
+          <td>&gt; 0.80</td>
+        </tr>
+        <tr>
+          <td><code>model.lcmv_null_depth_db_mean</code></td>
+          <td>LCMV null 억압 깊이 평균</td>
+          <td>&lt; -30 dB</td>
+        </tr>
+        <tr>
+          <td><code>baseline_music_lcmv.music_angle_mae_deg</code></td>
+          <td>MUSIC 기준선 각도 오차</td>
+          <td>~2 deg (CovNet과 비교)</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      CovNet의 <code>lcmv_null_depth_db_mean</code>이 MUSIC 기준선보다 낮은 값(더 깊은 null)을 보이면
+      성공적인 학습입니다.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>Step 4 — 실험 아이디어</h3>
+
+    <div class="grid-3">
+      <div class="card">
+        <h3>실험 A: 스냅샷 수 변경</h3>
+        <p><span class="badge-blue">초급</span></p>
+        <p>
+          <code>generate_data.py</code>의 <code>generate_sample()</code>에서
+          <code>n_snapshots=100</code>을 <code>20</code>으로 줄여 봅니다.
+        </p>
+        <p><strong>예상 결과:</strong> 스냅샷이 적으면 공분산 추정 오차가 커집니다.
+        특히 낮은 JNR 시나리오에서 성능이 크게 저하될 수 있습니다.</p>
+        <p><strong>확인 포인트:</strong> JNR 구간별로 성능 변화를 비교해 보세요.</p>
+      </div>
+      <div class="card">
+        <h3>실험 B: CNN 채널 수 확대</h3>
+        <p><span class="badge-gray">중급</span></p>
+        <p>
+          <code>model.py</code>에서 채널 수를 <code>16→32→64</code>에서
+          <code>32→64→128</code>로 늘려 봅니다.
+        </p>
+        <pre><code>nn.Conv2d(2, 32, 3, padding=1)
+nn.Conv2d(32, 64, 3, padding=1)
+nn.Conv2d(64, 128, 3, padding=1)
+# head 입력도 수정: Linear(128+1, 256)</code></pre>
+        <p><strong>확인 포인트:</strong> <code>python model.py</code>로 파라미터 수를 확인하세요.
+        성능이 비례해서 오르나요, 아니면 과적합이 생기나요?</p>
+      </div>
+      <div class="card">
+        <h3>실험 C: 2-재머 케이스 분리 분석</h3>
+        <p><span class="badge-gray">고급</span></p>
+        <p>
+          <code>train.py</code>의 평가 함수에서 <code>n_jammers==1</code>과
+          <code>n_jammers==2</code> 케이스를 분리하여 성능을 비교합니다.
+        </p>
+        <p><strong>예상 결과:</strong> 2-재머 케이스에서 약한 재머가 공분산을 복잡하게 만들어
+        강한 재머 추정도 어려워질 수 있습니다.</p>
+        <p><strong>확인 포인트:</strong> 어떤 조건에서 두 케이스의 MAE 차이가 가장 크게 나타나나요?</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Step 5 — 자기 프로젝트로 확장하기</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>확장 방향</th>
+          <th>수정 파일</th>
+          <th>주요 변경 내용</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>다중 재머 동시 추정</td>
+          <td>model.py, train.py</td>
+          <td>출력 차원을 2로 늘려 sin(θ_j1), sin(θ_j2) 동시 예측</td>
+        </tr>
+        <tr>
+          <td>재머 수 분류 추가</td>
+          <td>model.py, train.py</td>
+          <td>회귀 head 외에 분류 head(1 or 2개) 추가 → multi-task 학습</td>
+        </tr>
+        <tr>
+          <td>실제 배열 데이터 적용</td>
+          <td>generate_data.py</td>
+          <td>HDF5 키 형식(cov, look_angle_deg, jammer_angle_deg)만 맞추면 교체 가능</td>
+        </tr>
+        <tr>
+          <td>더 많은 안테나 수</td>
+          <td>generate_data.py, model.py</td>
+          <td>N_RX=16: 공분산 행렬이 (2,16,16)으로 확장, CNN 구조 재검토 필요</td>
+        </tr>
+        <tr>
+          <td>비정상 클러터 환경</td>
+          <td>generate_data.py</td>
+          <td>잡음 분산을 공간적으로 변화시켜 Frobenius 정규화의 한계 탐색</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="alert">
+      <strong>핵심 원칙:</strong> 새로운 데이터나 태스크로 전환할 때는 항상 smoke test부터 돌려서
+      파이프라인이 끝까지 오류 없이 실행되는지 먼저 확인하세요.
+      성능 튜닝은 그다음입니다.
+    </div>
+  </div>
+
+  <!-- ===== Expected Results Summary ===== -->
+  <h2>기대 결과 요약</h2>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>지표</th>
+          <th>MUSIC+LCMV (baseline)</th>
+          <th>CovNet+LCMV (목표)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Angle MAE (deg)</td>
+          <td>~2 deg</td>
+          <td>&lt; 1.5 deg</td>
+        </tr>
+        <tr>
+          <td>Within ±2° Accuracy</td>
+          <td>~60%</td>
+          <td>&gt; 80%</td>
+        </tr>
+        <tr>
+          <td>LCMV Null Depth (dB)</td>
+          <td>varies (~-25 dB)</td>
+          <td>&lt; -30 dB</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      낮은 JNR(10~15 dB) 구간에서 두 방법의 격차가 가장 뚜렷합니다.
+      JNR이 높을수록 재머가 공분산에 선명히 나타나 MUSIC도 잘 동작하므로,
+      CovNet의 우위는 낮은 JNR 케이스에서 검증됩니다.
+    </p>
+  </div>
+
+  <!-- ===== Footer ===== -->
+  <div class="footer">
+    REMI Lab — Radar AI Project Guide &nbsp;|&nbsp; P08 Jammer Null Steering &nbsp;|&nbsp; Chungnam National University
+  </div>
+
+</div>
+</body>
+</html>
