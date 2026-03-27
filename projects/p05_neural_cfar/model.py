@@ -11,7 +11,7 @@ Architecture:
 
 Input:  (B, 2, 15, 15)
 Output: (B, 1)  — raw logit (apply sigmoid for probability)
-~72K parameters
+~28K parameters
 """
 from __future__ import annotations
 

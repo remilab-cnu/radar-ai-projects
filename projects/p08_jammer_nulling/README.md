@@ -29,13 +29,13 @@ CovNet (~73K 파라미터):
 ```
 입력: (B, 2, 8, 8) 공분산 행렬
 
-Conv2d(2→16, 3×3) -BN-ReLU  → (B, 16, 6, 6)
-Conv2d(16→32, 3×3)-BN-ReLU  → (B, 32, 4, 4)
-Conv2d(32→64, 3×3)-BN-ReLU  → (B, 64, 2, 2)
-Global Average Pooling        → (B, 64)
+Conv2d(2→16, 3×3, pad=1)-BN-ReLU   → (B, 16, 8, 8)
+Conv2d(16→32, 3×3, pad=1)-BN-ReLU  → (B, 32, 8, 8)
+Conv2d(32→64, 3×3, pad=1)-BN-ReLU  → (B, 64, 8, 8)
+Global Average Pooling               → (B, 64)
 
-Concat with look_angle/90     → (B, 65)
-FC(65→128)-ReLU → FC(128→1)  → (B, 1): sin(θ_jammer)
+Concat with look_angle/90            → (B, 65)
+FC(65→256)-ReLU → FC(256→128)-ReLU → FC(128→1) → sin(θ_jammer)
 ```
 
 각도 복원: `θ_jammer = arcsin(clamp(output, -1, 1)) × 180/π`

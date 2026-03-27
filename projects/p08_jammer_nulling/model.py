@@ -3,7 +3,7 @@
 입력: (B, 2, 8, 8) 공분산 행렬 (real/imag) + look_angle (B, 1)
 출력: (B, 1) — sin(jammer_angle) 예측 (후처리: arcsin으로 각도 복원)
 
-파라미터 수: ~55K
+파라미터 수: ~73K
 """
 from __future__ import annotations
 

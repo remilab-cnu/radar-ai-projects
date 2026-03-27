@@ -7,7 +7,7 @@
   → PixelShuffle(2)   [32x32 → 64x64]
   → Conv(1,1,3)
 
-약 ~100K 파라미터.
+약 ~121K 파라미터.
 """
 from __future__ import annotations
 

@@ -199,8 +199,8 @@ def evaluate_model(model: nn.Module, split: str = "test",
             p_rx_si = np.mean(y_si_np[b] ** 2) + 1e-20
             input_sir_b = 10 * np.log10(p_clean / p_rx_si)  # clean/SI
             p_clean_hat = np.mean(clean_hat_np[b] ** 2) + 1e-20
-            p_si_hat = np.mean(si_hat_np[b] ** 2) + 1e-20
-            output_sir_b = 10 * np.log10(p_clean_hat / (p_si_hat + 1e-20))
+            p_residual_si = np.mean((y_si_np[b] - si_hat_np[b]) ** 2) + 1e-20
+            output_sir_b = 10 * np.log10(p_clean_hat / (p_residual_si + 1e-20))
             sir_gains.append(output_sir_b - input_sir_b)
 
             # Clean NMSE

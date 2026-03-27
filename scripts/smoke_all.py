@@ -35,7 +35,7 @@ def main():
     )
     args = parser.parse_args()
 
-    # Assert all 10 expected project directories exist before running.
+    # Assert all 9 expected project directories exist before running.
     missing = [p for p in EXPECTED_PROJECTS if not (PROJECTS_DIR / p).is_dir()]
     if missing:
         print(f"ERROR: Missing project directories: {missing}", file=sys.stderr)

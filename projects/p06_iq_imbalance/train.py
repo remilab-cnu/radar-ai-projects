@@ -18,7 +18,7 @@ import json
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, Dataset
 
 from common.cli import base_parser
 from common.hdf5_io import load_hdf5
@@ -96,7 +96,7 @@ class CombinedLoss(nn.Module):
         return loss_params + self.lambda_signal * loss_signal
 
 
-class IQDataset(TensorDataset):
+class IQDataset(Dataset):
     """Custom dataset that holds x_corrupt, y_params, y_clean."""
 
     def __init__(self, x_corrupt: torch.Tensor, y_params: torch.Tensor,
