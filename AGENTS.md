@@ -4,27 +4,27 @@ This file is generated for a live OMX team worker run and is disposable.
 
 ## Worker Identity
 - Team: implement-the-approved-radar-p
-- Worker: worker-3
+- Worker: worker-2
 - Role: executor
 - Leader cwd: /root/workspace/byungkwan-workspace/teaching/radar-ai-projects
-- Worktree root: /root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.omx/team/implement-the-approved-radar-p/worktrees/worker-3
+- Worktree root: /root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.omx/team/implement-the-approved-radar-p/worktrees/worker-2
 - Team state root: /root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.omx/state
-- Inbox path: /root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.omx/state/team/implement-the-approved-radar-p/workers/worker-3/inbox.md
-- Mailbox path: /root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.omx/state/team/implement-the-approved-radar-p/mailbox/worker-3.json
+- Inbox path: /root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.omx/state/team/implement-the-approved-radar-p/workers/worker-2/inbox.md
+- Mailbox path: /root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.omx/state/team/implement-the-approved-radar-p/mailbox/worker-2.json
 - Leader mailbox path: /root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.omx/state/team/implement-the-approved-radar-p/mailbox/leader-fixed.json
 - Task directory: /root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.omx/state/team/implement-the-approved-radar-p/tasks
-- Worker status path: /root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.omx/state/team/implement-the-approved-radar-p/workers/worker-3/status.json
-- Worker identity path: /root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.omx/state/team/implement-the-approved-radar-p/workers/worker-3/identity.json
+- Worker status path: /root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.omx/state/team/implement-the-approved-radar-p/workers/worker-2/status.json
+- Worker identity path: /root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.omx/state/team/implement-the-approved-radar-p/workers/worker-2/identity.json
 
 ## Protocol
-1. Read your inbox at `/root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.omx/state/team/implement-the-approved-radar-p/workers/worker-3/inbox.md`.
+1. Read your inbox at `/root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.omx/state/team/implement-the-approved-radar-p/workers/worker-2/inbox.md`.
 2. Load the worker skill from the first existing path:
    - `${CODEX_HOME:-~/.codex}/skills/worker/SKILL.md`
    - `/root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.codex/skills/worker/SKILL.md`
    - `/root/workspace/byungkwan-workspace/teaching/radar-ai-projects/skills/worker/SKILL.md`
 3. Send startup ACK before task work:
 
-   `omx team api send-message --input "{"team_name":"implement-the-approved-radar-p","from_worker":"worker-3","to_worker":"leader-fixed","body":"ACK: worker-3 initialized"}" --json`
+   `omx team api send-message --input "{"team_name":"implement-the-approved-radar-p","from_worker":"worker-2","to_worker":"leader-fixed","body":"ACK: worker-2 initialized"}" --json`
 
 4. Resolve canonical team state root in this order: `OMX_TEAM_STATE_ROOT` env -> worker identity `team_state_root` -> config/manifest `team_state_root` -> local cwd fallback.
 5. Read task files from `/root/workspace/byungkwan-workspace/teaching/radar-ai-projects/.omx/state/team/implement-the-approved-radar-p/tasks/task-<id>.json` using bare `task_id` values in APIs.
@@ -33,13 +33,13 @@ This file is generated for a live OMX team worker run and is disposable.
    - `omx team api transition-task-status --json`
    - `omx team api release-task-claim --json` only for rollback to pending
 7. Use mailbox delivery flow:
-   - `omx team api mailbox-list --input "{"team_name":"implement-the-approved-radar-p","worker":"worker-3"}" --json`
-   - `omx team api mailbox-mark-delivered --input "{"team_name":"implement-the-approved-radar-p","worker":"worker-3","message_id":"<MESSAGE_ID>"}" --json`
+   - `omx team api mailbox-list --input "{"team_name":"implement-the-approved-radar-p","worker":"worker-2"}" --json`
+   - `omx team api mailbox-mark-delivered --input "{"team_name":"implement-the-approved-radar-p","worker":"worker-2","message_id":"<MESSAGE_ID>"}" --json`
 8. Preserve leader steering via inbox/mailbox nudges; task payload stays in inbox/task JSON, not this file.
 9. Do not pass `workingDirectory` to legacy team_* MCP tools; use `omx team api` CLI interop.
 
 ## Message Protocol
-- Always include `from_worker: "worker-3"`
+- Always include `from_worker: "worker-2"`
 - Send leader messages to `to_worker: "leader-fixed"`
 
 ## Scope Rules
