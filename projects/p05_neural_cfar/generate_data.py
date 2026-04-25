@@ -52,7 +52,6 @@ def extract_patch(rdm_mag: np.ndarray, r_bin: int, d_bin: int) -> np.ndarray | N
     return patch
 
 
-
 def nearest_target_distance_bins(r_bin: int, d_bin: int, target_info: list[dict]) -> float:
     """Return Euclidean bin distance from the CUT to the nearest true target bin."""
     if not target_info:
@@ -74,6 +73,7 @@ def rdm_products(signal: np.ndarray, radar: FMCWRadar) -> tuple[np.ndarray, np.n
     mag_db = 20 * np.log10(mag / (noise_floor + 1e-30) + 1e-30)
     mag_norm = np.clip(mag_db, -20.0, 40.0) / 60.0 + 1.0 / 3.0
     return mag_norm.astype(np.float32), linear_power
+
 
 def patch_to_channels(patch: np.ndarray) -> np.ndarray:
     """패치 → 2채널 (N, 2, 15, 15).
@@ -98,7 +98,7 @@ def generate_split(
     radar: FMCWRadar,
     rng: np.random.Generator,
     seed_base: int,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, ...]:
     """표적/비표적 패치 생성.
 
     각 SNR bin에서 n_target//len(bins) 표적과 n_noise//len(bins) 비표적을 생성한다.

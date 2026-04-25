@@ -648,8 +648,8 @@ python train.py --generate --smoke</code></pre>
           <td>patch baseline보다 높으면 성공</td>
         </tr>
         <tr>
-          <td><code>patch_cfar_baseline.balanced_accuracy</code></td>
-          <td>patch baseline 기준 Balanced Accuracy</td>
+          <td><code>patch_ca_cfar_linear_power.pfa_1e2.balanced_accuracy</code></td>
+          <td>선형 전력 patch CA-CFAR 기준 Balanced Accuracy</td>
           <td>~0.65 (목표: Neural CFAR &gt; 0.85)</td>
         </tr>
       </tbody>
@@ -763,7 +763,7 @@ nn.Linear(128, 128)   # FC도 맞춰서</code></pre>
       <tbody>
         <tr>
           <td>ROC-AUC</td>
-          <td>~0.80</td>
+          <td>N/A (fixed threshold detector)</td>
           <td>&gt; 0.92</td>
         </tr>
         <tr>

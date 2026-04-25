@@ -69,7 +69,7 @@ python train.py --eval_only --checkpoint artifacts/best_model.pt
 
 | 지표 | Linear-power patch CA-CFAR baseline | Neural CFAR (목표) |
 |------|-------------------|-------------------|
-| ROC-AUC | ~0.80 | >0.92 |
+| ROC-AUC | N/A (fixed threshold detector) | >0.92 |
 | Pd @ Pfa=1e-2 | ~0.60 | >0.80 |
 | Pd @ Pfa=1e-3 | ~0.40 | >0.65 |
 | Balanced Acc. | ~0.65 | >0.85 |
