@@ -90,14 +90,14 @@ class SICLoss(nn.Module):
 # ---------------------------------------------------------------------------
 
 def nlms_baseline(tx_ref: np.ndarray, rx_mix: np.ndarray,
-                  n_taps: int = 32, mu: float = 0.05) -> np.ndarray:
+                  n_taps: int = 8, mu: float = 0.2) -> np.ndarray:
     """Complex NLMS adaptive filter (벡터화 미적용 — 교육용 단순 구현).
 
     Parameters
     ----------
     tx_ref : (N,) complex — TX 기준 신호
     rx_mix : (N,) complex — 수신 혼합 신호
-    n_taps : int — 필터 탭 수
+    n_taps : int — 필터 탭 수 (generator SI channel is 2~5 taps)
     mu : float — 스텝 크기
 
     Returns

@@ -84,11 +84,11 @@ def apply_si_channel(tx: np.ndarray, rng: np.random.Generator,
 
     # 선택적 3차 비선형
     if nonlinear:
-        alpha3 = rng.uniform(0.05, 0.2) * np.exp(1j * rng.uniform(0, 2 * np.pi))
+        alpha3 = rng.uniform(0.1, 0.3) * np.exp(1j * rng.uniform(0, 2 * np.pi))
         # A constant-envelope chirp would make tx*|tx|^2 indistinguishable
-        # from a linear path.  Apply the cubic term after the multipath SI
-        # channel so NLMS has a genuine nonlinear residual to expose.
-        y_si += alpha3 * y_linear * np.abs(y_linear) ** 2
+        # from a linear path. Add a small cubic phase-leakage term so NLMS has
+        # a genuine nonlinear residual to expose in the teaching baseline.
+        y_si += alpha3 * tx ** 3
 
     return y_si, h
 
