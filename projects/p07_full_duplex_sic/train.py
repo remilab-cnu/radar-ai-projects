@@ -121,11 +121,13 @@ def nlms_baseline(tx_ref: np.ndarray, rx_mix: np.ndarray,
 
 def evaluate_nlms_baseline(split: str = "test") -> dict:
     """NLMS 기준선 성능 평가."""
-    data = load_hdf5(DATA_DIR / f"{split}.h5",
-                     ["tx_ref", "rx_mix", "y_si", "y_clean"])
+    data = load_hdf5(DATA_DIR / f"{split}.h5")
 
     cancellation_dbs = []
+    linear_cancellation_dbs = []
+    nonlinear_cancellation_dbs = []
     n_eval = min(200, data["tx_ref"].shape[0])
+    nonlinear_flags = data.get("nonlinear")
 
     for i in range(n_eval):
         tx = data["tx_ref"][i, 0] + 1j * data["tx_ref"][i, 1]   # (512,) complex
@@ -139,9 +141,21 @@ def evaluate_nlms_baseline(split: str = "test") -> dict:
         p_res = np.mean(np.abs(residual) ** 2) + 1e-20
         canc_db = 10 * np.log10(p_si / p_res)
         cancellation_dbs.append(canc_db)
+        if nonlinear_flags is not None:
+            if bool(nonlinear_flags[i]):
+                nonlinear_cancellation_dbs.append(canc_db)
+            else:
+                linear_cancellation_dbs.append(canc_db)
 
-    return {"nlms_cancellation_db_mean": float(np.mean(cancellation_dbs)),
-            "nlms_cancellation_db_std": float(np.std(cancellation_dbs))}
+    metrics = {
+        "nlms_cancellation_db_mean": float(np.mean(cancellation_dbs)),
+        "nlms_cancellation_db_std": float(np.std(cancellation_dbs)),
+    }
+    if linear_cancellation_dbs:
+        metrics["nlms_linear_cancellation_db_mean"] = float(np.mean(linear_cancellation_dbs))
+    if nonlinear_cancellation_dbs:
+        metrics["nlms_nonlinear_cancellation_db_mean"] = float(np.mean(nonlinear_cancellation_dbs))
+    return metrics
 
 
 # ---------------------------------------------------------------------------
