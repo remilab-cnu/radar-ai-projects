@@ -1,7 +1,21 @@
-# P03: DeepMUSIC CNN
+# P03 Archive: Covariance-Input DeepMUSIC CNN
+
+> **Deprecated / archive status.** This covariance-input DoA experiment is not
+> the current P03 assignment. Current P03 is lecture-canonical in
+> `grad-radar-ai` Week 12 and uses a RAM(range-angle map)-only / OGM-oriented
+> contract. Keep this folder only as historical array-processing reference until
+> a runnable RAM/OGM P03 is regenerated in this repository.
 
 Direction-of-Arrival (DoA) estimation using a CNN trained on covariance
 matrices, compared against classical MUSIC in the provided evaluation.
+
+## Current P03 source of truth
+
+- Canonical lecture/design material: sibling repo `grad-radar-ai/weeks/week12/`
+  and `grad-radar-ai/projects/p3-deepmusic/`.
+- This folder: retired covariance-input DeepMUSIC baseline.
+- Do not describe this folder as the active P03 project in new guides or
+  lecture pages.
 
 ## Task
 

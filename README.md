@@ -3,6 +3,21 @@
 Graduate-level course projects covering radar signal processing and deep learning.
 Each project provides a complete pipeline: **synthetic data generation → model training → quantitative evaluation**, all runnable on CPU.
 
+
+## Source-of-truth boundary
+
+This repository is the canonical **technical / runnable project** repository:
+project code, data generators, model definitions, training scripts, smoke tests,
+and project README files should live here.
+
+The sibling `grad-radar-ai` repository is the canonical **lecture-site** surface:
+week pages, course narrative, deployed HTML, and committed lecture figures live
+there. P03 and P04 are explicit lecture-canonical exceptions: their assignment
+narrative is governed by `grad-radar-ai` Week 12 / Week 13, while runnable code
+here must either be aligned to that narrative or clearly marked as archive.
+See [`docs/project-source-map.md`](docs/project-source-map.md) before copying or
+editing P01–P04 material across repositories.
+
 ---
 
 ## 🔰 처음 시작하기 (Step-by-Step)
@@ -114,19 +129,23 @@ cat artifacts/metrics.json
 
 ## Projects
 
-| # | Title | Topic | Params | Simulator |
-|---|-------|-------|--------|-----------|
-| P1 | U-Net FMCW Detector | Target detection on RDM | 7.7M | FMCW + clutter |
-| P2 | ResNet-18 HAR | Human activity classification | 11.1M | micro-Doppler |
-| P3 | DeepMUSIC CNN | Direction-of-Arrival estimation | 19.3M | DoA/array |
-| P4 | DnCNN-SAR Despeckling | SAR image restoration | 556K | SAR |
-| P5 | Neural CFAR | Learned detection threshold | 28K | FMCW + clutter |
-| P6 | I/Q Imbalance Correction | RF front-end compensation | 133K | FMCW |
-| P7 | Full-Duplex SIC | Self-interference cancellation | 302K | waveform-consistent chirp echo + FIR SI |
-| P8 | Jammer Null Steering | Adaptive beamforming | 73K | DoA/array |
-| P9 | RD Super-Resolution | Physical LR/HR Range-Doppler mapping | 121K | FMCW |
+| # | Title | Topic | Params | Source boundary |
+|---|-------|-------|--------|-----------------|
+| P1 | U-Net FMCW Detector | Target detection on RDM | 7.7M | Technical canonical here; lecture guide in `grad-radar-ai` |
+| P2 | ResNet-18 HAR | Human activity classification | 11.1M | Technical canonical here; lecture guide in `grad-radar-ai` |
+| P3 | Deprecated covariance DeepMUSIC archive | Retired DoA-only covariance experiment | 19.3M | Not current P03; current RAM/OGM lecture contract is canonical in `grad-radar-ai` |
+| P4 | DnCNN-SAR Despeckling | SAR image restoration | 556K | Runnable companion here; lecture contract canonical in `grad-radar-ai` |
+| P5 | Neural CFAR | Learned detection threshold | 28K | Technical canonical here; FMCW + clutter |
+| P6 | I/Q Imbalance Correction | RF front-end compensation | 133K | Technical canonical here; FMCW |
+| P7 | Full-Duplex SIC | Self-interference cancellation | 302K | Technical canonical here; waveform-consistent chirp echo + FIR SI |
+| P8 | Jammer Null Steering | Adaptive beamforming | 73K | Technical canonical here; DoA/array |
+| P9 | RD Super-Resolution | Physical LR/HR Range-Doppler mapping | 121K | Technical canonical here; FMCW |
 
-> **P1–P4** are lecture-use examples (full-size models, shown in class).
+> **P1–P2** are lecture-use examples whose runnable technical source is this repo.
+> **P3** covariance-input DeepMUSIC is retained only as a deprecated archive until
+> the Week 12 RAM/OGM contract from `grad-radar-ai` is regenerated here.
+> **P4** remains a runnable DnCNN-SAR companion, but the lecture/assignment
+> narrative is canonical in `grad-radar-ai`.
 > **P5–P9** are student project templates (CPU-friendly, <302K parameters).
 > **P7 physics contract:** `isr_db` is SI-to-echo power ratio (`P_si/P_echo`),
 > `sir_db` is retained as a legacy alias, `snr_db` is echo-to-noise, and the
@@ -452,8 +471,8 @@ radar-ai-projects/
 ├── projects/
 │   ├── p01_unet_detector/     U-Net FMCW target detection
 │   ├── p02_resnet18_har/      ResNet-18 human activity recognition
-│   ├── p03_deepmusic_cnn/     DeepMUSIC DoA estimation
-│   ├── p04_dncnn_sar/         DnCNN SAR despeckling
+│   ├── p03_deepmusic_cnn/     Deprecated covariance DeepMUSIC archive
+│   ├── p04_dncnn_sar/         DnCNN SAR despeckling companion
 │   ├── p05_neural_cfar/       Neural CFAR detection
 │   ├── p06_iq_imbalance/      I/Q imbalance correction
 │   ├── p07_full_duplex_sic/   Full-duplex self-interference cancellation

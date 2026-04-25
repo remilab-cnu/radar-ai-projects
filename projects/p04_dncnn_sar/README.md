@@ -2,6 +2,13 @@
 
 SAR image despeckling using DnCNN residual learning in the dB-magnitude domain.
 
+## Source boundary
+
+This folder is the runnable P04 companion implementation. The P04 lecture and
+assignment narrative is canonical in the sibling `grad-radar-ai` Week 13 SAR
+Despeckling material. Keep changes here aligned with that lecture contract; do
+not change the P04 learning objective from this repository first.
+
 ## Task
 
 Given a speckle-corrupted SAR dB-magnitude image, predict the clean image.
