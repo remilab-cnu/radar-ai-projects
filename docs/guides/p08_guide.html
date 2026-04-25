@@ -663,12 +663,12 @@ main()
     "angle_rmse_deg": 2.01,
     "within_2deg_acc": 0.823,         ← 2도 이내 정확도
     "within_5deg_acc": 0.951,
-    "lcmv_null_depth_db_mean": -32.4  ← 평균 null 억압 깊이
+    "lcmv_null_depth_db_mean": -32.4  ← 예측 null 적용 후 실제 재머 방향 평균 응답
   },
   "baseline_music_lcmv": {
     "music_angle_mae_deg": 2.05,      ← MUSIC 기준선 MAE
     "music_within2deg_acc": 0.601,
-    "music_lcmv_null_depth_db_mean": -25.1
+    "music_lcmv_null_depth_db_mean": -25.1  ← 같은 지표의 MUSIC 기준선
   }
 }</code></pre>
   </div>
@@ -709,7 +709,7 @@ Training for 2 epochs on cpu...
 Evaluating model on test set...
   angle_mae_deg: x.xxxx
   within_2deg_acc: 0.xxxx
-  lcmv_null_depth_db_mean: -xx.xx
+  lcmv_null_depth_db_mean: -xx.xx   # 실제 재머 방향 응답, 낮을수록 좋음
 
 Evaluating MUSIC+LCMV baseline (subset)...
   music_angle_mae_deg: x.xxxx</code></pre>

@@ -297,7 +297,7 @@ def main():
             "hr_doppler_bin_spacing_mps",
             "lr_doppler_bin_spacing_mps",
         )
-        if key in load_split_attrs("test")
+        if key in test_attrs
     }
 
     for group, vals in metrics.items():
