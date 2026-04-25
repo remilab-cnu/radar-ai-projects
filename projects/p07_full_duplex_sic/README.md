@@ -77,13 +77,16 @@ HDF5 키:
 | `sir_db` | `(N,)` | `isr_db`와 동일한 legacy alias |
 | `snr_db` | `(N,)` | 샘플별 echo-to-noise SNR [dB] |
 | `nonlinear` | `(N,)` | 3차 SI leakage 포함 여부 |
+| `si_power`, `target_echo_power`, `noise_power` | `(N,)` | 전력 label 검증용 생성 시점 측정값 |
+| `measured_isr_db`, `measured_snr_db` | `(N,)` | `isr_db`, `snr_db`와 비교 가능한 사후 검증 label |
 
 ## Physics Contract / Allowed Simplification / Not Claimed
 
 - **Physics contract:** `rx_mix = y_si + target_echo + noise`; `y_si`는 TX 기준 파형의
   짧은 복소 FIR 누설(일부 샘플은 cubic leakage 포함)이고, 표적 에코는 같은 `tx_ref`의
   delayed/Doppler-scaled copy이다. `isr_db`는 측정 전력 기준 `P_si/P_echo`, `snr_db`는
-  `P_echo/P_noise`를 의미한다.
+  `P_echo/P_noise`를 의미하며, HDF5에는 이를 재계산할 수 있는 measured power metadata를
+  함께 저장한다.
 - **Allowed simplification:** 단일 TX chirp, 단일 표적, 짧은 baseband record, 통계적 채널
   랜덤화를 사용한다. 빠른 CPU handout을 위해 안테나 격리, ADC, RF front-end 포화,
   full FMCW range-Doppler processing은 생략한다.

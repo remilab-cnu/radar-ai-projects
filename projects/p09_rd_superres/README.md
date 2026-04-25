@@ -87,13 +87,15 @@ python train.py --eval_only --checkpoint artifacts/best_model.pt
 |------|-------------------|------------------|---------------------|
 | PSNR (dB) | 낮음 | 물리 LR 보간 기준선 | bicubic보다 높음 |
 | NMSE | 높음 | 물리 LR 보간 기준선 | bicubic보다 낮음 |
-| Peak Loc Error (px) | 큼 | 기준선 | 기준선보다 작음 |
+| Peak Loc Error (px) | peak proxy에서는 강할 수 있음 | 기준선 | 충분한 학습 후 기준선과 비교 |
 
 평가 지표 설명:
 - **PSNR (dB)**: 픽셀 수준 재구성 품질
 - **NMSE**: 정규화 평균 제곱 오차
 - **Peak Loc Error (px)**: GT 표적 위치 대비 예측 오차
 - **baseline_zero_pad**: LR bin을 HR 짝수 bin에 복사하고 나머지를 0으로 채우는 image-domain 기준선이며, 물리적 FFT zero-padding 복원 주장으로 해석하지 않는다.
+- zero-pad는 bright LR bin을 그대로 복사하므로 peak 위치 proxy에서는 bicubic/초기
+  learned model보다 좋아 보일 수 있다. PSNR/NMSE와 peak metric을 함께 해석한다.
 
 ## Quick Start
 

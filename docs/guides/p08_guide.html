@@ -100,6 +100,15 @@ R의 물리적 의미:
   </div>
 
   <div class="card">
+    <h3>Physics contract / Allowed simplification / Not claimed</h3>
+    <ul>
+      <li><strong>Physics contract:</strong> λ/2 간격 8소자 ULA, narrowband far-field steering vector, snapshot covariance, 1~2 Gaussian jammer, 원하는 신호 look angle, LCMV null steering으로 구성됩니다. 평가는 예측 각도에 null을 둔 뒤 <em>실제 재머 각도</em>의 beam response를 측정합니다.</li>
+      <li><strong>Allowed simplification:</strong> primary jammer 하나만 회귀/평가 대상으로 삼고, mutual coupling, array calibration error, wideband beam squint, platform motion은 생략합니다.</li>
+      <li><strong>Not claimed:</strong> 실제 전자전 환경의 adaptive jammer, wideband calibrated array, 실시간 beam management를 재현하는 모델은 아닙니다. 배열 신호처리 핵심 개념을 CPU handout으로 확인하는 데 목적이 있습니다.</li>
+    </ul>
+  </div>
+
+  <div class="card">
     <h3>LCMV 빔포머 — null 배치 원리</h3>
     <p>
       <strong>LCMV(Linearly Constrained Minimum Variance)</strong> 빔포머는 제약 조건을 만족하면서
@@ -122,7 +131,7 @@ R의 물리적 의미:
   w^H · a(θ_s) = 1   → 원하는 신호를 왜곡 없이 통과
   w^H · a(θ_j) = 0   → 재머 방향 응답 = 0 (null steering)
       </pre>
-      <p>그림 3. LCMV 빔포머 수식. θ_j 추정이 정확할수록 null depth가 깊어집니다.</p>
+      <p>그림 3. LCMV 빔포머 수식. θ_j 추정이 정확할수록 실제 재머 방향 응답이 낮아집니다.</p>
     </div>
     <p>
       <strong>null depth(dB)</strong>는 null 방향에서의 빔 응답 전력을 dB로 나타낸 값입니다.
@@ -547,10 +556,11 @@ main()
   </div>
 
   <div class="card">
-    <h3>lcmv_null_depth() — null 억압 성능 측정</h3>
-    <pre><code>def lcmv_null_depth(R, look_angle_deg, null_angle_deg):
+    <h3>lcmv_null_depth() — 실제 재머 억압 성능 측정</h3>
+    <pre><code>def lcmv_null_depth(R, look_angle_deg, null_angle_deg, eval_angle_deg):
     a_look = steering_vector(look_angle_deg, N_RX, D_OVER_LAM)  # (8,)
     a_null = steering_vector(null_angle_deg, N_RX, D_OVER_LAM)  # (8,)
+    a_eval = steering_vector(eval_angle_deg, N_RX, D_OVER_LAM)  # 실제 재머 방향
 
     # 제약 행렬: C = [a_look, a_null], 목표: f = [1, 0]
     C = np.stack([a_look, a_null], axis=1)  # (8, 2)
@@ -560,14 +570,14 @@ main()
     RiC = R_inv @ C
     w = RiC @ np.linalg.inv(C.conj().T @ RiC) @ f   # LCMV 가중치 벡터
 
-    # null 방향 응답 전력 → dB 변환
-    null_response = abs(w.conj() @ a_null) ** 2
+    # 예측 null을 적용한 뒤 실제 재머 방향 응답 전력 → dB 변환
+    null_response = abs(w.conj() @ a_eval) ** 2
     null_depth_db = 10 * np.log10(null_response + 1e-20)
     return null_depth_db  # 낮을수록 좋음 (예: -40 dB)</code></pre>
     <p>
-      이 함수는 CovNet이 예측한 각도에 null을 배치했을 때 실제로 재머가 억압되는지 측정합니다.
-      완벽하게 정확한 추정이라면 이론적으로 null depth가 <code>-∞ dB</code>에 가까워집니다.
-      실제로는 유한한 스냅샷 수와 추정 오차로 인해 -30 ~ -40 dB 수준이면 우수한 성능입니다.
+      이 함수는 CovNet이 예측한 각도에 null을 배치한 뒤, <strong>실제 재머 방향</strong>에서
+      응답이 얼마나 줄었는지 측정합니다. 예측 각도 자체에서만 측정하면 LCMV 제약 때문에
+      틀린 예측도 항상 깊은 null처럼 보이므로 성능 지표가 아닙니다.
     </p>
   </div>
 
@@ -625,10 +635,10 @@ main()
           <td>&gt; 0.80</td>
         </tr>
         <tr>
-          <td>LCMV Null Depth (dB)</td>
-          <td>10·log10(|w^H·a(θ_j)|²)</td>
-          <td>재머 방향 억압 깊이. 낮을수록 강한 억압.</td>
-          <td>&lt; -30 dB</td>
+          <td>True-jammer LCMV Response (dB)</td>
+          <td>10·log10(|w^H·a(θ_true)|²)</td>
+          <td>예측 null 적용 후 실제 재머 방향 응답. 낮을수록 강한 억압.</td>
+          <td>낮을수록 좋음</td>
         </tr>
       </tbody>
     </table>
@@ -734,8 +744,8 @@ Evaluating MUSIC+LCMV baseline (subset)...
         </tr>
         <tr>
           <td><code>model.lcmv_null_depth_db_mean</code></td>
-          <td>LCMV null 억압 깊이 평균</td>
-          <td>&lt; -30 dB</td>
+          <td>예측 null 적용 후 실제 재머 방향 응답 평균</td>
+          <td>낮을수록 좋음</td>
         </tr>
         <tr>
           <td><code>baseline_music_lcmv.music_angle_mae_deg</code></td>
@@ -745,8 +755,8 @@ Evaluating MUSIC+LCMV baseline (subset)...
       </tbody>
     </table>
     <p>
-      CovNet의 <code>lcmv_null_depth_db_mean</code>이 MUSIC 기준선보다 낮은 값(더 깊은 null)을 보이면
-      성공적인 학습입니다.
+      CovNet의 <code>lcmv_null_depth_db_mean</code>은 예측 각도가 아니라 실제 재머 각도에서
+      측정한 응답입니다. MUSIC 기준선보다 낮은 값이면 실제 재머 억압이 더 좋다는 뜻입니다.
     </p>
   </div>
 
@@ -862,9 +872,9 @@ nn.Conv2d(64, 128, 3, padding=1)
           <td>&gt; 80%</td>
         </tr>
         <tr>
-          <td>LCMV Null Depth (dB)</td>
-          <td>varies (~-25 dB)</td>
-          <td>&lt; -30 dB</td>
+          <td>True-jammer LCMV Response (dB)</td>
+          <td>varies</td>
+          <td>baseline보다 낮음</td>
         </tr>
       </tbody>
     </table>

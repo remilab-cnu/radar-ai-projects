@@ -28,6 +28,15 @@
   <h2>1. 이 프로젝트는 뭘 하는 건가요?</h2>
 
   <div class="card">
+    <h3>Physics contract / Allowed simplification / Not claimed</h3>
+    <ul>
+      <li><strong>Physics contract:</strong> 단일 수신기 FMCW beat signal을 정규화한 뒤, 명시적인 gain/phase/DC I/Q imbalance forward model을 적용합니다. CNN이 추정한 4개 파라미터는 같은 수식의 해석적 역변환에 사용됩니다.</li>
+      <li><strong>Allowed simplification:</strong> 단일 chirp fast-time 신호, 정지 표적, 단일 RX, 정규화된 baseband beat로 CPU handout runtime을 유지합니다.</li>
+      <li><strong>Not claimed:</strong> LO/mixer/ADC까지 포함한 full RF receiver impairment chain, 온도/전압 drift calibration, multi-channel array calibration, deployment-ready I/Q calibration은 아닙니다.</li>
+    </ul>
+  </div>
+
+  <div class="card">
     <h3>I/Q 수신기란 무엇인가요?</h3>
     <p>
       레이다나 통신 수신기는 수신 신호를 <strong>I(In-phase, 동상) 채널</strong>과
@@ -696,7 +705,7 @@ python train.py --generate --smoke</code></pre>
 
 [Saved] artifacts/metrics.json</code></pre>
     <div class="alert">
-      smoke 결과의 수치는 데이터가 적어 낮게 나와도 정상입니다.
+      smoke 결과의 수치는 데이터가 적어 낮게 나오거나 Gram-Schmidt보다 나빠도 정상입니다.
       성능을 보려면 <code>--smoke</code> 없이 전체 학습(<code>--epochs 30</code>)을 실행하세요.
     </div>
   </div>
@@ -863,6 +872,8 @@ type artifacts\metrics.json</code></pre>
       </tbody>
     </table>
     <p>
+      위 수치는 full run 기준 목표입니다. 2 epoch smoke run은 파이프라인 실행 확인용이며
+      CNN이 항상 Gram-Schmidt보다 좋아야 한다는 benchmark가 아닙니다.
       이 저장소의 Gram-Schmidt 기준선은 DC 오프셋 제거 단계를 포함하지 않습니다.
       CNN 방법의 핵심 강점은 4개 파라미터를 모두 동시에 추정하여
       동일한 모델 안에서 DC 오프셋까지 함께 추정한다는 점입니다.

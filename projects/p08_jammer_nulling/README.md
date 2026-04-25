@@ -24,6 +24,19 @@ x(t) = a(θ_s)·s(t) + Σ a(θ_j)·j(t) + n(t)
 | 출력 (학습) | `(N, 1)` | sin(jammer_angle) |
 | 출력 (추론 후) | scalar | jammer_angle = arcsin(output) × 180/π |
 
+## Physics Contract / Allowed Simplification / Not Claimed
+
+- **Physics contract:** λ/2 간격 8소자 ULA, narrowband far-field steering vector,
+  snapshot covariance, 1~2 Gaussian jammer, 원하는 신호 look angle, LCMV null
+  steering으로 구성된다. 평가는 예측 각도에 null을 둔 뒤 **실제 재머 각도**의
+  beam response를 측정한다.
+- **Allowed simplification:** primary jammer 하나만 회귀/평가 대상으로 삼고,
+  mutual coupling, array calibration error, wideband beam squint, platform motion은
+  생략한다.
+- **Not claimed:** 실제 전자전 환경의 adaptive jammer, wideband calibrated array,
+  실시간 beam management를 재현하는 모델은 아니다. 배열 신호처리 핵심 개념을
+  CPU handout으로 확인하는 데 목적이 있다.
+
 ## Approach / Architecture
 
 CovNet (~73K 파라미터):
@@ -91,9 +104,11 @@ python model.py
 |------|-----------------|--------------|
 | Angle MAE (deg) | ~2 deg | <1.5 deg |
 | Within ±2 deg Acc | ~60% | >80% |
-| LCMV Null Depth (dB) | varies | <-30 dB |
+| True-jammer LCMV Response (dB) | varies | 낮을수록 좋음 |
 
-**기준선**: MUSIC 알고리즘으로 재머 방향 추정 → LCMV null steering
+**기준선**: MUSIC 알고리즘으로 재머 방향 추정 → 예측 방향에 LCMV null steering →
+실제 재머 방향 응답 측정. 예측 방향 자체의 constraint residual은 항상 깊게 나올 수
+있으므로 성능 지표로 쓰지 않는다.
 
 학습 팁:
 - JNR이 높을수록 재머가 공분산 행렬에 뚜렷이 나타나 추정이 쉬워짐

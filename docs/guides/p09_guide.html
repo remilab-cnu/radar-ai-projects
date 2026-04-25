@@ -621,6 +621,8 @@ class SRLoss(nn.Module):
       <strong>PSNR</strong>은 전체적인 화질을 나타내지만, 레이다에서는 표적 위치 정확도가 더 중요할 수 있습니다.
       따라서 <strong>Peak Location Error</strong>를 함께 확인하세요.
       PSNR이 높아도 표적 위치가 어긋나면 실용적 가치가 낮습니다.
+      단, zero-insertion은 LR의 bright bin을 HR 짝수 위치에 직접 복사하므로 peak 위치 proxy에서는
+      의외로 강할 수 있습니다. PSNR/NMSE와 함께 해석해야 합니다.
     </p>
   </div>
 
@@ -645,8 +647,9 @@ class SRLoss(nn.Module):
         errors.extend(matched_dist)</code></pre>
     <p>
       GT 표적 수만큼 예측 peak을 찾아 가장 가까운 쌍을 매칭합니다.
-      Bicubic은 표적 주변을 흐리게 복원하므로 peak가 번지고, Peak Location Error가 큽니다.
-      SRResNetLite는 Sobel 손실 덕에 더 날카로운 peak를 복원합니다.
+      Bicubic은 표적 주변을 흐리게 만들 수 있고, zero-insertion은 LR bright bin을 그대로 보존해
+      peak proxy에서는 강할 수 있습니다. SRResNetLite는 충분한 학습 후 PSNR/NMSE와 peak 위치를
+      함께 개선하는지를 확인합니다.
     </p>
   </div>
 
@@ -671,7 +674,7 @@ class SRLoss(nn.Module):
   "baseline_zero_pad": {
     "psnr_db": 18.0,             ← image-domain zero insertion 기준선
     "nmse": -8.0,
-    "peak_loc_err_px": 3.0
+    "peak_loc_err_px": 3.0       ← peak proxy에서는 강할 수 있음
   },
   "data_contract": {
     "generation_mode": "physical_lr_hr_radar_configs",
@@ -904,9 +907,9 @@ python train.py --generate --smoke</code></pre>
         </tr>
         <tr>
           <td>Peak Location Error (px)</td>
-          <td>큼</td>
+          <td>peak proxy에서는 강할 수 있음</td>
           <td>비교 기준선</td>
-          <td>기준선보다 작음</td>
+          <td>충분한 학습 후 기준선과 비교</td>
         </tr>
       </tbody>
     </table>

@@ -269,6 +269,7 @@ for bin_idx, snr_db in enumerate(snr_bins):
       6개 SNR 구간에서 균등하게 샘플링하므로, 학습 데이터가 특정 SNR에 편향되지 않습니다.
       전체 split 크기는 <strong>train 24K / val 6K / test 6K</strong>(표적:비표적 = 50:50)이고,
       smoke 모드에서는 <strong>train 256 / val 64 / test 64</strong>로 줄어듭니다.
+      작은 split에서는 SNR bin 균등 분배 때문에 실제 샘플 수가 요청값보다 1~2개 적을 수 있습니다.
     </p>
     <div class="alert">
       <strong>"이 파라미터를 바꾸면?" 실험 제안</strong>
@@ -614,7 +615,8 @@ python train.py --generate --smoke</code></pre>
   Balanced Accuracy:  0.xxxx
 [Saved] artifacts/metrics.json</code></pre>
     <div class="alert">
-      smoke 결과의 수치는 데이터가 적어 낮게 나와도 정상입니다.
+      smoke 결과의 수치는 데이터가 적어 낮거나, 쉬운 no-target CUT 때문에 CA-CFAR baseline이
+      과도하게 좋아 보여도 정상입니다.
       성능을 보려면 <code>--smoke</code> 없이 전체 학습(<code>--epochs 30</code>)을 실행하세요.
     </div>
   </div>
@@ -654,6 +656,10 @@ python train.py --generate --smoke</code></pre>
         </tr>
       </tbody>
     </table>
+    <p>
+      위 수치는 full run 기준 기대 범위입니다. smoke run은 표본 수가 작아 empirical Pfa/Pd가
+      크게 흔들릴 수 있으므로 실행 확인용으로만 사용하세요.
+    </p>
     <p>
       <code>per_snr</code> 항목을 보면 SNR이 낮을수록 두 방법의 격차가 벌어지는 것을 확인할 수 있습니다.
       이것이 Neural CFAR의 핵심 강점입니다.

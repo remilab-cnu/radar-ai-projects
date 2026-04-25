@@ -160,6 +160,8 @@ def make_sample(rng: np.random.Generator,
     p_noise = p_echo / snr_lin
     noise_std = np.sqrt(p_noise / 2)
     noise = noise_std * (rng.standard_normal(N) + 1j * rng.standard_normal(N)).astype(np.complex64)
+    measured_isr_db = 10.0 * np.log10(p_si / (p_echo + 1e-20))
+    measured_snr_db = 10.0 * np.log10(p_echo / (p_noise + 1e-20))
 
     # 수신 혼합 신호
     y_clean = echo + noise  # 표적 에코 + 잡음
@@ -175,6 +177,11 @@ def make_sample(rng: np.random.Generator,
         "y_si": to_2ch(y_si),       # (2, 512) — 추정 목표
         "y_clean": to_2ch(y_clean), # (2, 512) — 클린 신호 (eval용)
         "nonlinear": np.array(nonlinear, dtype=np.uint8),
+        "si_power": np.float32(p_si),
+        "target_echo_power": np.float32(p_echo),
+        "noise_power": np.float32(p_noise),
+        "measured_isr_db": np.float32(measured_isr_db),
+        "measured_snr_db": np.float32(measured_snr_db),
     }
 
 
@@ -200,6 +207,8 @@ def generate_split(n: int, seed: int,
 
     tx_refs, rx_mixes, y_sis, y_cleans = [], [], [], []
     isr_dbs, snr_dbs, nonlinear_flags = [], [], []
+    si_powers, echo_powers, noise_powers = [], [], []
+    measured_isrs, measured_snrs = [], []
 
     for _ in range(n):
         isr_db = rng.uniform(isr_range[0], isr_range[1])
@@ -212,6 +221,11 @@ def generate_split(n: int, seed: int,
         isr_dbs.append(isr_db)
         snr_dbs.append(snr_db)
         nonlinear_flags.append(sample["nonlinear"])
+        si_powers.append(sample["si_power"])
+        echo_powers.append(sample["target_echo_power"])
+        noise_powers.append(sample["noise_power"])
+        measured_isrs.append(sample["measured_isr_db"])
+        measured_snrs.append(sample["measured_snr_db"])
 
     isr_db_arr = np.array(isr_dbs, dtype=np.float32)
     return {
@@ -223,6 +237,11 @@ def generate_split(n: int, seed: int,
         "sir_db": isr_db_arr.copy(),                               # (N,) legacy alias
         "snr_db": np.array(snr_dbs, dtype=np.float32),             # (N,)
         "nonlinear": np.array(nonlinear_flags, dtype=np.uint8),     # (N,)
+        "si_power": np.array(si_powers, dtype=np.float32),          # (N,)
+        "target_echo_power": np.array(echo_powers, dtype=np.float32), # (N,)
+        "noise_power": np.array(noise_powers, dtype=np.float32),    # (N,)
+        "measured_isr_db": np.array(measured_isrs, dtype=np.float32), # (N,)
+        "measured_snr_db": np.array(measured_snrs, dtype=np.float32), # (N,)
     }
 
 

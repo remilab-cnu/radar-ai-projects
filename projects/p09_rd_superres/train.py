@@ -151,7 +151,8 @@ def peak_localization_error(pred_np: np.ndarray, peak_mask_np: np.ndarray) -> fl
         if gt_centers.ndim == 1:
             gt_centers = gt_centers[np.newaxis]
 
-        # Predicted peaks: top-k local maxima
+        # Predicted peaks: top-k bright bins. This is a simple localization
+        # proxy, not a strict local-maxima detector.
         flat_idx = np.argsort(pred_map.ravel())[::-1][:n_obj * 3]
         row_idx = flat_idx // pred_map.shape[1]
         col_idx = flat_idx % pred_map.shape[1]

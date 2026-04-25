@@ -27,6 +27,17 @@ g   = 10^(gain_db / 20)  [선형 이득]
 
 추정 파라미터: `[gain_db, phase_deg, dc_i, dc_q]`
 
+## Physics Contract / Allowed Simplification / Not Claimed
+
+- **Physics contract:** 단일 수신기 FMCW beat signal을 정규화한 뒤, 명시적인
+  gain/phase/DC I/Q imbalance forward model을 적용한다. 모델이 추정한 4개
+  파라미터는 같은 수식의 해석적 역변환에 사용된다.
+- **Allowed simplification:** 단일 chirp fast-time 신호, 정지 표적, 단일 RX,
+  정규화된 baseband beat를 사용해 CPU handout runtime을 유지한다.
+- **Not claimed:** LO/mixer/ADC까지 포함한 full RF receiver impairment chain,
+  온도/전압 drift calibration, multi-channel array calibration, deployment-ready
+  I/Q calibration을 모델링한다고 주장하지 않는다.
+
 ## Approach / Architecture
 
 ```
@@ -87,6 +98,9 @@ python train.py --eval_only --checkpoint artifacts/best_model.pt
 | Phase MAE | — | < 1.0 deg |
 | NMSE 개선 | ~3 dB | > 8 dB |
 | IRR 개선 | ~10 dB | > 20 dB |
+
+위 수치는 full run 기준 목표값이다. `--smoke`는 2 epoch 실행 확인용이므로
+CNN이 Gram-Schmidt보다 낮게 나올 수 있으며, 성능 benchmark로 해석하지 않는다.
 
 이 저장소의 Gram-Schmidt 기준선은 gain/phase를 부분 보정하지만 DC 오프셋 제거
 단계를 포함하지 않는다. 실제 고전적 I/Q 보정 파이프라인은 평균 제거 등 DC 보정을

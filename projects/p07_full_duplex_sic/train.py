@@ -158,6 +158,37 @@ def evaluate_nlms_baseline(split: str = "test") -> dict:
     return metrics
 
 
+def validate_power_contract(split: str = "test") -> dict[str, float]:
+    """Check stored ISR/SNR labels against measured generation powers."""
+    try:
+        data = load_hdf5(
+            DATA_DIR / f"{split}.h5",
+            ["isr_db", "sir_db", "snr_db", "measured_isr_db", "measured_snr_db",
+             "si_power", "target_echo_power", "noise_power"],
+        )
+    except KeyError:
+        return {"power_contract_skipped_legacy_dataset": 1.0}
+    isr_err = np.abs(data["isr_db"] - data["measured_isr_db"])
+    snr_err = np.abs(data["snr_db"] - data["measured_snr_db"])
+    alias_err = np.abs(data["isr_db"] - data["sir_db"])
+
+    recomputed_isr = 10.0 * np.log10(
+        data["si_power"] / (data["target_echo_power"] + 1e-20)
+    )
+    recomputed_snr = 10.0 * np.log10(
+        data["target_echo_power"] / (data["noise_power"] + 1e-20)
+    )
+    return {
+        "isr_label_mae_db": float(np.mean(isr_err)),
+        "isr_label_maxerr_db": float(np.max(isr_err)),
+        "snr_label_mae_db": float(np.mean(snr_err)),
+        "snr_label_maxerr_db": float(np.max(snr_err)),
+        "sir_alias_maxerr_db": float(np.max(alias_err)),
+        "power_recomputed_isr_maxerr_db": float(np.max(np.abs(recomputed_isr - data["measured_isr_db"]))),
+        "power_recomputed_snr_maxerr_db": float(np.max(np.abs(recomputed_snr - data["measured_snr_db"]))),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Evaluation
 # ---------------------------------------------------------------------------
@@ -304,8 +335,17 @@ def main():
     for k, v in nlms_metrics.items():
         print(f"  {k}: {v:.4f}")
 
+    print("\nValidating stored ISR/SNR power contract...")
+    power_metrics = validate_power_contract("test")
+    for k, v in power_metrics.items():
+        print(f"  {k}: {v:.6f}")
+
     # 6. 메트릭 저장
-    all_metrics = {"model": test_metrics, "baseline_nlms": nlms_metrics}
+    all_metrics = {
+        "model": test_metrics,
+        "baseline_nlms": nlms_metrics,
+        "power_contract": power_metrics,
+    }
     metrics_path = ARTIFACT_DIR / "metrics.json"
     with open(metrics_path, "w") as f:
         json.dump(all_metrics, f, indent=2)

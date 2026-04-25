@@ -73,17 +73,18 @@ class JammerDataset(torch.utils.data.Dataset):
 # LCMV Beamformer 유틸
 # ---------------------------------------------------------------------------
 
-def lcmv_null_depth(R: np.ndarray, look_angle_deg: float,
-                    null_angle_deg: float) -> float:
-    """LCMV 빔포머로 null 방향 전력을 측정 (null depth).
+def lcmv_weights(R: np.ndarray, look_angle_deg: float,
+                 null_angle_deg: float) -> np.ndarray | None:
+    """Return LCMV weights with a distortionless look and predicted null.
 
     Constraints:
       - 원하는 방향 응답 = 1 (distortionless)
-      - null 방향 응답 = 0
+      - 예측한 재머 방향 응답 = 0
 
     Returns
     -------
-    null_depth_db : float — null 방향 전력 [dB] (낮을수록 좋음)
+    w : ndarray or None
+        LCMV weight vector. ``None`` if the constrained solve is singular.
     """
     a_look = steering_vector(look_angle_deg, N_RX, D_OVER_LAM)  # (8,)
     a_null = steering_vector(null_angle_deg, N_RX, D_OVER_LAM)  # (8,)
@@ -99,12 +100,37 @@ def lcmv_null_depth(R: np.ndarray, look_angle_deg: float,
         CRiC = C.conj().T @ RiC  # (2, 2)
         w = RiC @ np.linalg.inv(CRiC + 1e-12 * np.eye(2)) @ f
     except np.linalg.LinAlgError:
+        return None
+
+    return w
+
+
+def lcmv_null_depth(R: np.ndarray, look_angle_deg: float,
+                    null_angle_deg: float,
+                    eval_angle_deg: float | None = None) -> float:
+    """LCMV beam response after steering a null at ``null_angle_deg``.
+
+    ``null_angle_deg`` is the predicted jammer direction used as a constraint.
+    ``eval_angle_deg`` is the direction where suppression is measured.  During
+    model evaluation this must be the true jammer direction; otherwise the
+    metric only checks that the mathematical constraint was applied and will be
+    near -200 dB even for a wrong prediction.
+
+    Returns
+    -------
+    response_db : float
+        Beam response power at ``eval_angle_deg`` in dB. Lower means stronger
+        suppression at the evaluated direction.
+    """
+    w = lcmv_weights(R, look_angle_deg, null_angle_deg)
+    if w is None:
         return 0.0  # 역행렬 실패 시 0 dB
 
-    # null 방향 응답 전력
-    null_response = abs(w.conj() @ a_null) ** 2
-    null_depth_db = float(10 * np.log10(null_response + 1e-20))
-    return null_depth_db
+    if eval_angle_deg is None:
+        eval_angle_deg = null_angle_deg
+    a_eval = steering_vector(eval_angle_deg, N_RX, D_OVER_LAM)
+    response_power = abs(w.conj() @ a_eval) ** 2
+    return float(10 * np.log10(response_power + 1e-20))
 
 
 # ---------------------------------------------------------------------------
@@ -148,9 +174,11 @@ def music_lcmv_baseline(split: str = "test", n_eval: int = 500) -> dict:
         mae_list.append(err)
         within2_list.append(float(err <= 2.0))
 
-        # LCMV null depth (예측 방향에 null steering)
+        # LCMV true-jammer suppression: place a null at the estimated jammer
+        # angle, then measure response at the true jammer angle.
         R_denorm = R * (np.linalg.norm(R, 'fro') + 1e-10)  # 정규화 역변환 (근사)
-        nd = lcmv_null_depth(R_denorm, look_deg, est_jammer)
+        nd = lcmv_null_depth(R_denorm, look_deg, est_jammer,
+                             eval_angle_deg=true_jammer)
         null_depth_list.append(nd)
 
     return {
@@ -172,7 +200,7 @@ def evaluate_model(model: nn.Module, split: str = "test",
     Metrics:
     - angle MAE (deg): |jammer_true - jammer_pred| 평균
     - accuracy within ±2 deg
-    - LCMV null depth using predicted angle
+    - LCMV response at the true jammer after steering a null at predicted angle
     """
     model.eval()
     dataset = JammerDataset(DATA_DIR / f"{split}.h5")
@@ -203,7 +231,12 @@ def evaluate_model(model: nn.Module, split: str = "test",
         # LCMV null depth (일부 샘플만 계산, 속도를 위해)
         for b in range(min(B, 50)):  # 배치당 최대 50개
             R = cov_np[b, 0] + 1j * cov_np[b, 1]
-            nd = lcmv_null_depth(R, float(look_deg_np[b]), float(pred_deg[b]))
+            nd = lcmv_null_depth(
+                R,
+                float(look_deg_np[b]),
+                float(pred_deg[b]),
+                eval_angle_deg=float(true_deg[b]),
+            )
             null_depths.append(nd)
 
         idx += B

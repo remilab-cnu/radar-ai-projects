@@ -47,6 +47,8 @@ python generate_data.py --smoke  # 소규모 smoke 데이터셋
 - **SNR bins:** 0, 5, 10, 15, 20, 25 dB (각 bin에서 균등 샘플링)
 - **분할:** train 24K / val 6K / test 6K
 - **CFAR 메타데이터:** `patch_power`, `cut_range_bin`, `cut_doppler_bin`, `target_distance_bins`, `clutter_type`
+- smoke처럼 작은 split에서는 SNR bin 균등 분배 때문에 요청 샘플 수보다 1~2개 적게
+  생성될 수 있다. full split은 표의 규모를 기준으로 해석한다.
 
 ```
 data/
@@ -73,6 +75,9 @@ python train.py --eval_only --checkpoint artifacts/best_model.pt
 | Pd @ Pfa=1e-2 | ~0.60 | >0.80 |
 | Pd @ Pfa=1e-3 | ~0.40 | >0.65 |
 | Balanced Acc. | ~0.65 | >0.85 |
+
+위 수치는 full run에서의 기대 범위다. `--smoke`는 표본 수가 작고 쉬운 no-target
+CUT가 섞일 수 있어 CA-CFAR empirical Pfa/Pd가 과도하게 좋아지거나 나빠질 수 있다.
 
 저 SNR(0~5 dB) 구간에서 Neural CFAR의 개선 효과가 가장 뚜렷하게 나타난다.
 
