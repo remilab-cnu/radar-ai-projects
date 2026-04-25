@@ -4,9 +4,14 @@ Range-Doppler Map에서 15x15 패치를 추출하여
 표적 존재 여부를 분류하는 학습 데이터를 생성한다.
 
 HDF5 keys:
-  x       (N, 2, 15, 15)  — ch0: dB magnitude, ch1: locally normalized
-  y       (N,)             — binary label (1=target, 0=clutter/noise)
-  snr_db  (N,)             — 해당 샘플의 SNR 레벨
+  x                     (N, 2, 15, 15)  — ch0: dB magnitude, ch1: locally normalized
+  patch_power           (N, 15, 15)     — linear RDM power for CA-CFAR baseline
+  y                     (N,)             — binary label (1=target CUT, 0=clutter/noise CUT)
+  snr_db                (N,)             — 해당 샘플의 SNR 레벨
+  cut_range_bin         (N,)             — CUT range-bin index
+  cut_doppler_bin       (N,)             — CUT Doppler-bin index
+  target_distance_bins  (N,)             — nearest target-bin distance from CUT
+  clutter_type          (N,)             — fixed-width string clutter type
 
 Splits: train 24K / val 6K / test 6K (smoke: 256/64/64)
 Balance: 50/50, 6 SNR bins (0,5,10,15,20,25 dB)
@@ -47,6 +52,29 @@ def extract_patch(rdm_mag: np.ndarray, r_bin: int, d_bin: int) -> np.ndarray | N
     return patch
 
 
+
+def nearest_target_distance_bins(r_bin: int, d_bin: int, target_info: list[dict]) -> float:
+    """Return Euclidean bin distance from the CUT to the nearest true target bin."""
+    if not target_info:
+        return float("inf")
+    distances = [
+        np.hypot(float(d_bin - info["doppler_bin"]), float(r_bin - info["range_bin"]))
+        for info in target_info
+    ]
+    return float(min(distances))
+
+
+def rdm_products(signal: np.ndarray, radar: FMCWRadar) -> tuple[np.ndarray, np.ndarray]:
+    """Return normalized network magnitude image and native linear-power RDM."""
+    rdm = range_doppler_map(signal[0:1])
+    rdm_half = rdm[0, :, :radar.N_samples // 2]
+    mag = np.abs(rdm_half)
+    linear_power = (mag ** 2).astype(np.float32)
+    noise_floor = np.median(mag)
+    mag_db = 20 * np.log10(mag / (noise_floor + 1e-30) + 1e-30)
+    mag_norm = np.clip(mag_db, -20.0, 40.0) / 60.0 + 1.0 / 3.0
+    return mag_norm.astype(np.float32), linear_power
+
 def patch_to_channels(patch: np.ndarray) -> np.ndarray:
     """패치 → 2채널 (N, 2, 15, 15).
 
@@ -76,6 +104,8 @@ def generate_split(
     각 SNR bin에서 n_target//len(bins) 표적과 n_noise//len(bins) 비표적을 생성한다.
     """
     xs, ys, snrs = [], [], []
+    patch_powers, cut_range_bins, cut_doppler_bins = [], [], []
+    target_distances, clutter_types = [], []
 
     per_bin_tgt = max(1, n_target // len(snr_bins))
     per_bin_noise = max(1, n_noise // len(snr_bins))
@@ -109,14 +139,7 @@ def generate_split(
                 seed=int(scene_seed),
             )
 
-            # RDM 생성
-            rdm = range_doppler_map(signal[0:1])
-            rdm_half = rdm[0, :, :Nr_half]  # (Nd, Nr_half)
-            mag = np.abs(rdm_half)
-            noise_floor = np.median(mag)
-            mag_db = 20 * np.log10(mag / (noise_floor + 1e-30) + 1e-30)
-            # 동일한 [-20, 40] dB clip + normalize (clutter_model 기준과 일치)
-            mag_norm = np.clip(mag_db, -20.0, 40.0) / 60.0 + 1.0 / 3.0
+            mag_norm, linear_power = rdm_products(signal, radar)
 
             for info in target_info:
                 if collected_tgt >= per_bin_tgt:
@@ -124,11 +147,17 @@ def generate_split(
                 r_bin = info['range_bin']
                 d_bin = info['doppler_bin']
                 patch = extract_patch(mag_norm, r_bin, d_bin)
-                if patch is None:
+                power_patch = extract_patch(linear_power, r_bin, d_bin)
+                if patch is None or power_patch is None:
                     continue
                 xs.append(patch_to_channels(patch))
+                patch_powers.append(power_patch.astype(np.float32))
                 ys.append(1)
                 snrs.append(snr_db)
+                cut_range_bins.append(r_bin)
+                cut_doppler_bins.append(d_bin)
+                target_distances.append(nearest_target_distance_bins(r_bin, d_bin, target_info))
+                clutter_types.append("mixed")
                 collected_tgt += 1
 
             if scene_idx > per_bin_tgt * 5 + 20:
@@ -153,12 +182,7 @@ def generate_split(
                 seed=int(scene_seed),
             )
 
-            rdm = range_doppler_map(signal[0:1])
-            rdm_half = rdm[0, :, :Nr_half]
-            mag = np.abs(rdm_half)
-            noise_floor = np.median(mag)
-            mag_db = 20 * np.log10(mag / (noise_floor + 1e-30) + 1e-30)
-            mag_norm = np.clip(mag_db, -20.0, 40.0) / 60.0 + 1.0 / 3.0
+            mag_norm, linear_power = rdm_products(signal, radar)
 
             # 표적 마스크가 0인 셀에서 랜덤 추출
             zero_cells = np.argwhere(target_mask == 0)
@@ -171,23 +195,43 @@ def generate_split(
                     break
                 d_bin, r_bin = int(cell[0]), int(cell[1])
                 patch = extract_patch(mag_norm, r_bin, d_bin)
-                if patch is None:
+                power_patch = extract_patch(linear_power, r_bin, d_bin)
+                if patch is None or power_patch is None:
                     continue
                 xs.append(patch_to_channels(patch))
+                patch_powers.append(power_patch.astype(np.float32))
                 ys.append(0)
                 snrs.append(snr_db)
+                cut_range_bins.append(r_bin)
+                cut_doppler_bins.append(d_bin)
+                target_distances.append(nearest_target_distance_bins(r_bin, d_bin, target_info))
+                clutter_types.append("mixed")
                 collected_noise += 1
 
             if scene_idx > per_bin_noise * 3 + 20:
                 break
 
     x_arr = np.stack(xs, axis=0).astype(np.float32)
+    power_arr = np.stack(patch_powers, axis=0).astype(np.float32)
     y_arr = np.array(ys, dtype=np.float32)
     snr_arr = np.array(snrs, dtype=np.float32)
+    cut_r_arr = np.array(cut_range_bins, dtype=np.int32)
+    cut_d_arr = np.array(cut_doppler_bins, dtype=np.int32)
+    target_dist_arr = np.array(target_distances, dtype=np.float32)
+    clutter_arr = np.array(clutter_types, dtype="S16")
 
     # 셔플
     idx = rng.permutation(len(x_arr))
-    return x_arr[idx], y_arr[idx], snr_arr[idx]
+    return (
+        x_arr[idx],
+        power_arr[idx],
+        y_arr[idx],
+        snr_arr[idx],
+        cut_r_arr[idx],
+        cut_d_arr[idx],
+        target_dist_arr[idx],
+        clutter_arr[idx],
+    )
 
 
 def main():
@@ -212,10 +256,21 @@ def main():
     for split_name, (n_tgt, n_noise) in splits.items():
         print(f"\n[{split_name}] Generating {n_tgt} target + {n_noise} no-target patches...")
         seed_base = args.seed + {"train": 0, "val": 100000, "test": 200000}[split_name]
-        x, y, snr = generate_split(n_tgt, n_noise, SNR_BINS, radar,
-                                   np.random.default_rng(seed_base), seed_base)
-        print(f"  x: {x.shape}, y: {y.shape}, balance: {y.mean():.3f}")
-        save_hdf5(out_dir / f"{split_name}.h5", x=x, y=y, snr_db=snr)
+        x, patch_power, y, snr, cut_r, cut_d, target_dist, clutter = generate_split(
+            n_tgt, n_noise, SNR_BINS, radar, np.random.default_rng(seed_base), seed_base
+        )
+        print(f"  x: {x.shape}, patch_power: {patch_power.shape}, y: {y.shape}, balance: {y.mean():.3f}")
+        save_hdf5(
+            out_dir / f"{split_name}.h5",
+            x=x,
+            patch_power=patch_power,
+            y=y,
+            snr_db=snr,
+            cut_range_bin=cut_r,
+            cut_doppler_bin=cut_d,
+            target_distance_bins=target_dist,
+            clutter_type=clutter,
+        )
 
     print("\nData generation complete.")
 

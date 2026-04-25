@@ -23,16 +23,36 @@ from common.hdf5_io import load_hdf5
 from common.train_utils import training_loop, count_parameters
 from common.metrics import pd_at_pfa, classification_report
 from common.seed import seed_everything
+from cfar_utils import evaluate_patch_ca_cfar
 
 BASE = Path(__file__).parent
 
 
-def load_dataset(split: str, device: str = "cpu"):
-    data = load_hdf5(BASE / "data" / f"{split}.h5", ["x", "y", "snr_db"])
+def load_dataset(split: str, device: str = "cpu", include_cfar: bool = False):
+    keys = ["x", "y", "snr_db"]
+    if include_cfar:
+        keys += ["patch_power", "cut_range_bin", "cut_doppler_bin", "target_distance_bins", "clutter_type"]
+    try:
+        data = load_hdf5(BASE / "data" / f"{split}.h5", keys)
+    except KeyError as exc:
+        raise RuntimeError(
+            "P05 dataset is missing linear-power CFAR metadata. "
+            "Regenerate it with `python train.py --generate --smoke` or `python generate_data.py`."
+        ) from exc
+
     x = torch.as_tensor(data["x"], dtype=torch.float32).to(device)
     y = torch.as_tensor(data["y"], dtype=torch.float32).to(device)
     snr = data["snr_db"]
-    return x, y, snr
+    if not include_cfar:
+        return x, y, snr
+    cfar_meta = {
+        "patch_power": data["patch_power"],
+        "cut_range_bin": data["cut_range_bin"],
+        "cut_doppler_bin": data["cut_doppler_bin"],
+        "target_distance_bins": data["target_distance_bins"],
+        "clutter_type": data["clutter_type"],
+    }
+    return x, y, snr, cfar_meta
 
 
 def evaluate(model: nn.Module, x: torch.Tensor, y_true: torch.Tensor,
@@ -68,51 +88,9 @@ def evaluate(model: nn.Module, x: torch.Tensor, y_true: torch.Tensor,
     return metrics
 
 
-def cfar_baseline(x_np: np.ndarray, y_np: np.ndarray, pfa: float = 1e-2) -> float:
-    """CFAR-like patch baseline on normalized log-domain inputs.
-
-    This is intentionally a lightweight teaching baseline: it applies the
-    guard/training-cell thresholding idea to the 15x15 normalized ch0 patch.
-    It is not a full classical CA-CFAR implementation on linear-power RDM cells.
-    """
-    N = len(x_np)
-    # 중심 셀 magnitude (ch0 기준)
-    half = 7  # PATCH // 2
-
-    # 패치 내 CFAR-like threshold: center vs training region
-    # guard_ring=1, train_ring=3 → inner 3x3 guard, outer ring for training
-    g = 1
-    t = 3
-    n_train_cells = (2 * (g + t) + 1) ** 2 - (2 * g + 1) ** 2
-    alpha = n_train_cells * (pfa ** (-1.0 / n_train_cells) - 1)
-
-    detections = []
-    for i in range(N):
-        patch = x_np[i, 0]  # (15, 15) ch0
-        # power of center
-        center_pow = patch[half, half] ** 2
-
-        # training cells mask: exclude guard ring
-        mask = np.zeros((15, 15), dtype=bool)
-        mask[half - (g + t): half + (g + t) + 1,
-             half - (g + t): half + (g + t) + 1] = True
-        mask[half - g: half + g + 1,
-             half - g: half + g + 1] = False
-
-        noise_est = np.mean(patch[mask] ** 2)
-        T = alpha * noise_est
-        detections.append(1 if center_pow > T else 0)
-
-    y_pred = np.array(detections)
-    tp = np.sum((y_pred == 1) & (y_np == 1))
-    fp = np.sum((y_pred == 1) & (y_np == 0))
-    fn = np.sum((y_pred == 0) & (y_np == 1))
-    tn = np.sum((y_pred == 0) & (y_np == 0))
-
-    pd = tp / (tp + fn + 1e-9)
-    pfa_actual = fp / (fp + tn + 1e-9)
-    bal_acc = 0.5 * (tp / (tp + fn + 1e-9) + tn / (tn + fp + 1e-9))
-    return {"pd": float(pd), "pfa": float(pfa_actual), "balanced_accuracy": float(bal_acc)}
+def cfar_baseline(patch_power: np.ndarray, y_np: np.ndarray, pfa: float = 1e-2) -> dict[str, float]:
+    """Patch CA-CFAR baseline on native linear RDM power cells."""
+    return evaluate_patch_ca_cfar(patch_power, y_np, pfa=pfa)
 
 
 def main():
@@ -171,7 +149,7 @@ def main():
         print(f"\n[Eval] No checkpoint found at {ckpt}, evaluating current weights.")
 
     # --- 평가 ---
-    x_test, y_test, snr_test = load_dataset("test")
+    x_test, y_test, snr_test, cfar_meta = load_dataset("test", include_cfar=True)
     print("\n[Eval] Neural CFAR on test set...")
     metrics = evaluate(model, x_test, y_test, snr_test, device)
 
@@ -184,18 +162,23 @@ def main():
         print(f"    {k}: {v:.4f}")
 
     # --- CA-CFAR baseline ---
-    x_np = x_test.cpu().numpy()
     y_np = y_test.cpu().numpy()
-    print("\n[Baseline] CFAR-like patch threshold (normalized log-domain)...")
-    cfar_metrics = cfar_baseline(x_np, y_np, pfa=1e-2)
-    print(f"  Pd:                 {cfar_metrics['pd']:.4f}")
-    print(f"  Pfa (actual):       {cfar_metrics['pfa']:.4f}")
-    print(f"  Balanced Accuracy:  {cfar_metrics['balanced_accuracy']:.4f}")
+    patch_power = cfar_meta["patch_power"]
+    print("\n[Baseline] Patch CA-CFAR on linear RDM power...")
+    cfar_metrics = {
+        "pfa_1e2": cfar_baseline(patch_power, y_np, pfa=1e-2),
+        "pfa_1e3": cfar_baseline(patch_power, y_np, pfa=1e-3),
+    }
+    for label, vals in cfar_metrics.items():
+        print(f"  {label} target Pfa={vals['target_pfa']:.0e}")
+        print(f"    Pd:               {vals['pd']:.4f}")
+        print(f"    Pfa (empirical):  {vals['pfa']:.4f}")
+        print(f"    Balanced Acc.:    {vals['balanced_accuracy']:.4f}")
 
     # --- 저장 ---
     all_metrics = {
         "neural_cfar": metrics,
-        "patch_cfar_baseline": cfar_metrics,
+        "patch_ca_cfar_linear_power": cfar_metrics,
     }
     metrics_path = artifact_dir / "metrics.json"
     with open(metrics_path, "w") as f:
