@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import json
 import subprocess
 
+import h5py
 import numpy as np
 import torch
 import torch.nn as nn
@@ -86,11 +87,36 @@ def load_split_full(name: str) -> dict:
     return load_hdf5(path, ["x_lr", "y_hr", "peak_mask", "n_targets", "snr_db"])
 
 
+def load_split_attrs(name: str) -> dict:
+    """Load scalar HDF5 attrs for data-contract reporting."""
+    path = DATA / f"{name}.h5"
+    with h5py.File(path, "r") as f:
+        attrs = {}
+        for key, value in f.attrs.items():
+            if isinstance(value, np.generic):
+                value = value.item()
+            attrs[key] = value
+    return attrs
+
+
 # ─── Bicubic baseline ──────────────────────────────────────────────────────────
 
 def bicubic_upsample(x_lr: torch.Tensor) -> torch.Tensor:
     """Bicubic interpolation: (B, 1, 32, 32) → (B, 1, 64, 64)."""
     return F.interpolate(x_lr, scale_factor=2, mode="bicubic", align_corners=False)
+
+
+def zero_pad_upsample(x_lr: torch.Tensor) -> torch.Tensor:
+    """Zero-insert baseline: copy LR bins onto even HR bins, fill gaps with 0.
+
+    This is an intentionally simple image-domain zero-padding baseline. It is
+    reported separately from bicubic and the learned model, and is not claimed
+    to recover missing physical bandwidth or chirps.
+    """
+    b, c, h, w = x_lr.shape
+    out = torch.zeros((b, c, h * 2, w * 2), dtype=x_lr.dtype, device=x_lr.device)
+    out[..., ::2, ::2] = x_lr
+    return out
 
 
 # ─── Peak localization metric ──────────────────────────────────────────────────
@@ -162,14 +188,18 @@ def evaluate(model: nn.Module, test_data: dict, device: str) -> dict:
 
     # Bicubic baseline
     bicubic_np = bicubic_upsample(x_lr).numpy()
+    zero_pad_np = zero_pad_upsample(x_lr).numpy()
 
     # Metrics
     model_psnr = psnr(y_hr, pred_np)
     model_nmse = nmse(y_hr, pred_np)
     bicubic_psnr = psnr(y_hr, bicubic_np)
     bicubic_nmse = nmse(y_hr, bicubic_np)
+    zero_pad_psnr = psnr(y_hr, zero_pad_np)
+    zero_pad_nmse = nmse(y_hr, zero_pad_np)
     peak_err = peak_localization_error(pred_np, peak_mask)
     bicubic_peak_err = peak_localization_error(bicubic_np, peak_mask)
+    zero_pad_peak_err = peak_localization_error(zero_pad_np, peak_mask)
 
     return {
         "model": {
@@ -181,6 +211,11 @@ def evaluate(model: nn.Module, test_data: dict, device: str) -> dict:
             "psnr_db": round(bicubic_psnr, 3),
             "nmse": round(bicubic_nmse, 6),
             "peak_loc_err_px": round(bicubic_peak_err, 3),
+        },
+        "baseline_zero_pad": {
+            "psnr_db": round(zero_pad_psnr, 3),
+            "nmse": round(zero_pad_nmse, 6),
+            "peak_loc_err_px": round(zero_pad_peak_err, 3),
         },
     }
 
@@ -247,11 +282,30 @@ def main():
     print("\n=== Evaluation ===")
     test_data = load_split_full("test")
     metrics = evaluate(model, test_data, device)
+    test_attrs = load_split_attrs("test")
+    metrics["data_contract"] = {
+        key: test_attrs[key]
+        for key in (
+            "generation_mode",
+            "hr_bw_hz",
+            "lr_bw_hz",
+            "hr_n_chirps",
+            "lr_n_chirps",
+            "hr_range_bin_spacing_m",
+            "lr_range_bin_spacing_m",
+            "hr_doppler_bin_spacing_mps",
+            "lr_doppler_bin_spacing_mps",
+        )
+        if key in load_split_attrs("test")
+    }
 
     for group, vals in metrics.items():
         print(f"  [{group}]")
-        for k, v in vals.items():
-            print(f"    {k}: {v}")
+        if isinstance(vals, dict):
+            for k, v in vals.items():
+                print(f"    {k}: {v}")
+        else:
+            print(f"    {vals}")
 
     metrics_path = ARTIFACTS / "metrics.json"
     with open(metrics_path, "w") as f:

@@ -124,10 +124,14 @@ cat artifacts/metrics.json
 | P6 | I/Q Imbalance Correction | RF front-end compensation | 133K | FMCW |
 | P7 | Full-Duplex SIC | Self-interference cancellation | 302K | chirp + FIR channel |
 | P8 | Jammer Null Steering | Adaptive beamforming | 73K | DoA/array |
-| P9 | RD Super-Resolution | Range-Doppler enhancement | 121K | FMCW |
+| P9 | RD Super-Resolution | Physical LR/HR Range-Doppler mapping | 121K | FMCW |
 
 > **P1–P4** are lecture-use examples (full-size models, shown in class).
 > **P5–P9** are student project templates (CPU-friendly, <302K parameters).
+> **P9 physics note:** LR/HR pairs are generated from separate FMCW radar configs
+> (0.5 GHz/32 chirps vs 1 GHz/64 chirps), not by post-FFT HR image downsampling.
+> Report bicubic, zero-padding, and learned metrics as simulator-prior baselines;
+> do not claim physical bandwidth/chirp recovery.
 
 ## Quick Start
 

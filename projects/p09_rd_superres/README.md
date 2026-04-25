@@ -1,18 +1,28 @@
 # P09: RD Map Super-Resolution
 
-Range-Doppler Map을 저해상도(32×32)에서 고해상도(64×64)로 업샘플링하는 딥러닝 모델.
+Range-Doppler Map을 물리적 저해상도 레이다 설정(32×32)에서 고해상도 설정(64×64)으로 매핑하는 딥러닝 데모.
 
 ## Task
 
-저해상도 RD map을 입력으로 받아 고해상도 RD map을 출력한다. 이 데모의 LR 입력은
-raw radar 수집량을 줄여 만든 것이 아니라 HR dB map을 후처리로 다운샘플링해 만든
-이미지 super-resolution 과제이다. 따라서 물리적 range/Doppler 분해능을 실제로
-극복한다고 해석하지 말고, simulator prior를 이용한 RDM 업샘플링/peak sharpening
-실험으로 해석한다.
+저해상도 RD map을 입력으로 받아 고해상도 RD map을 출력한다. LR 입력은 HR dB map을
+후처리로 이미지 다운샘플링한 것이 아니라, 같은 표적 scene을 **낮은 대역폭/적은 chirp 수**의
+FMCW 설정으로 다시 시뮬레이션해 만든다.
 
+- **HR 설정**: BW 1 GHz, 64 chirps → 64×64 RDM
+- **LR 설정**: BW 0.5 GHz, 32 chirps → 32×32 RDM
 - **입력**: 저해상도 RD map `(B, 1, 32, 32)` — dB 정규화
 - **출력**: 고해상도 RD map `(B, 1, 64, 64)`
-- **기준선**: Bicubic interpolation
+- **기준선**: Bicubic interpolation, image-domain zero-padding/zero-insertion
+
+### Physics contract / allowed simplification / not claimed
+
+- **Physics contract**: LR/HR 쌍은 동일한 표적 range/velocity/RCS를 서로 다른 FMCW
+  radar configs로 관측한다. LR은 HR 대비 range bin spacing과 Doppler bin spacing이 약 2배 크다.
+  생성된 HDF5 파일에는 `generation_mode`, LR/HR BW, chirp 수, range/Doppler bin spacing attrs가 저장된다.
+- **Allowed simplification**: 두 설정 모두 같은 단순 해석적 FMCW simulator, 단일 RX, per-map dB 정규화를 사용한다.
+  LR/HR 잡음은 같은 SNR 범위에서 독립 생성된다.
+- **Not claimed**: 이 모델이 실제 센서의 물리적 bandwidth/chirp 부족을 정보 이론적으로 극복한다는 뜻이 아니다.
+  학습된 simulator prior로 같은 분포의 LR RDM을 HR grid에 맞춰 추정하는 교육용 실험이다.
 
 ## Approach / Architecture
 
@@ -38,17 +48,21 @@ L_total = L1(pred, HR) + 0.1 × L_grad(pred, HR)
 
 ```bash
 python generate_data.py   # 전체 데이터셋 생성
+python generate_data.py --smoke  # 빠른 smoke 데이터셋
 ```
 
 - 표적: 1~4개/씬, SNR 5~25 dB
-- **분할:** train 12K / val 2K / test 2K
+- **분할:** train 12K / val 2K / test 2K (`--smoke`: 256 / 64 / 64)
 - HDF5 키: `x_lr`, `y_hr`, `peak_mask`, `n_targets`, `snr_db`
+- HDF5 attrs: `generation_mode`, `hr_bw_hz`, `lr_bw_hz`, `hr_n_chirps`, `lr_n_chirps`,
+  `hr_range_bin_spacing_m`, `lr_range_bin_spacing_m`, `hr_doppler_bin_spacing_mps`,
+  `lr_doppler_bin_spacing_mps`
 
 ```
 data/
-  train.h5   # 12K scenes
-  val.h5     # 2K scenes
-  test.h5    # 2K scenes
+  train.h5
+  val.h5
+  test.h5
 ```
 
 ## Training
@@ -66,16 +80,20 @@ python train.py --eval_only --checkpoint artifacts/best_model.pt
 
 ## Expected Results
 
-| 지표 | Bicubic (baseline) | SRResNet-lite (목표) |
-|------|--------------------|---------------------|
-| PSNR (dB) | ~28 dB | >33 dB |
-| NMSE | ~-20 dB | <-28 dB |
-| Peak Loc Error (px) | ~1.5 px | <0.8 px |
+물리 LR/HR 설정이 서로 다르므로 기존 post-FFT image downsample 과제보다 어렵다. 숫자는 CPU smoke가
+아니라 충분한 데이터/epoch에서 확인해야 하며, 반드시 `metrics.json`의 세 그룹을 함께 보고한다.
+
+| 지표 | Zero-pad baseline | Bicubic baseline | SRResNet-lite (목표) |
+|------|-------------------|------------------|---------------------|
+| PSNR (dB) | 낮음 | 물리 LR 보간 기준선 | bicubic보다 높음 |
+| NMSE | 높음 | 물리 LR 보간 기준선 | bicubic보다 낮음 |
+| Peak Loc Error (px) | 큼 | 기준선 | 기준선보다 작음 |
 
 평가 지표 설명:
 - **PSNR (dB)**: 픽셀 수준 재구성 품질
 - **NMSE**: 정규화 평균 제곱 오차
 - **Peak Loc Error (px)**: GT 표적 위치 대비 예측 오차
+- **baseline_zero_pad**: LR bin을 HR 짝수 bin에 복사하고 나머지를 0으로 채우는 image-domain 기준선이며, 물리적 FFT zero-padding 복원 주장으로 해석하지 않는다.
 
 ## Quick Start
 
