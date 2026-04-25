@@ -128,10 +128,10 @@ cat artifacts/metrics.json
 
 > **P1–P4** are lecture-use examples (full-size models, shown in class).
 > **P5–P9** are student project templates (CPU-friendly, <302K parameters).
-> **P7 physics contract:** `isr_db` is SI-to-echo power ratio (`P_si/P_echo`),
-> `sir_db` is retained as a legacy alias, `snr_db` is echo-to-noise, and the
-> target echo is a delayed/Doppler-scaled copy of `tx_ref` rather than an
-> independent tone.
+> **P9 physics note:** LR/HR pairs are generated from separate FMCW radar configs
+> (0.5 GHz/32 chirps vs 1 GHz/64 chirps), not by post-FFT HR image downsampling.
+> Report bicubic, zero-padding, and learned metrics as simulator-prior baselines;
+> do not claim physical bandwidth/chirp recovery.
 
 ## Quick Start
 
