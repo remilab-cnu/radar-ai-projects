@@ -127,13 +127,13 @@ def make_sample(rng: np.random.Generator,
     # 표적 에코
     echo = generate_target_echo(N, rng)
 
-    # SIR 기반 전력 조정
-    # SIR = P_si / P_echo → P_si = 10^(sir_db/10) * P_echo
+    # SI-to-echo power ratio 기반 전력 조정.
+    # Historical key name is "sir_db", but the stored value is P_si / P_echo.
     p_si = np.mean(np.abs(y_si) ** 2) + 1e-20
     p_echo = np.mean(np.abs(echo) ** 2) + 1e-20
-    sir_lin = 10 ** (sir_db / 10.0)
+    si_to_echo_lin = 10 ** (sir_db / 10.0)
     # y_si 전력을 기준으로 echo 조정
-    scale_echo = np.sqrt(p_si / (sir_lin * p_echo + 1e-20))
+    scale_echo = np.sqrt(p_si / (si_to_echo_lin * p_echo + 1e-20))
     echo = echo * scale_echo
 
     # 잡음 (SNR 기준: SNR = P_si / P_noise)
@@ -166,7 +166,9 @@ def generate_split(n: int, seed: int,
     Returns
     -------
     dict with arrays of shape (N, 2, 512) for tx_ref/rx_mix/y_si/y_clean,
-    and (N,) for sir_db/snr_db
+    and (N,) for sir_db/snr_db. The legacy `sir_db` key stores the
+    SI-to-echo power ratio P_si/P_echo in dB, so larger values mean stronger
+    self-interference.
     """
     rng = np.random.default_rng(seed)
 

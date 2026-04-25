@@ -4,8 +4,9 @@ Human activity recognition from micro-Doppler spectrograms using ResNet-18.
 
 ## Task
 
-Classify 6 human activities from 128x128 micro-Doppler time-frequency spectrograms
-generated with a 77 GHz FMCW radar simulator.
+Classify 6 human activities from 128x128 micro-Doppler time-frequency
+spectrograms generated with a 77 GHz carrier CW/baseband micro-Doppler
+simulator.
 
 ## Architecture
 

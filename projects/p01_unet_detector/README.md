@@ -10,8 +10,8 @@ Evaluated against CA-CFAR as a classical baseline.
 ## Architecture
 
 - **Model**: UNetDetector — 5-stage encoder/decoder with skip connections
-- **Input**: `(B, 2, 128, 128)` — RDM log-magnitude + phase
-- **Output**: `(B, 1, 128, 128)` — detection probability map
+- **Input**: `(B, 2, 128, 250)` by default — RDM log-magnitude + phase
+- **Output**: `(B, 1, 128, 250)` by default — detection probability map
 - **Loss**: FocalDiceLoss (focal: alpha=0.75, gamma=2.0; dice weight=0.5)
 - **Parameters**: ~7.7M (base_ch=32)
 
@@ -41,7 +41,10 @@ Generated via `generate_data.py` using `shared/fmcw_simulator.py` and `shared/cl
 | Val | `data/det_val.h5` | 5K |
 | Test | `data/det_test.h5` | 5K |
 
-HDF5 schema: `x (N,2,128,128)`, `y (N,1,128,128)`, `snr_db (N,)`, `n_targets (N,)`
+HDF5 schema: `x (N,2,128,250)`, `y (N,1,128,250)`, `snr_db (N,)`, `n_targets (N,)`
+
+The range dimension is 250 because the simulator uses 500 fast-time ADC
+samples and keeps the positive range-frequency half after the FFT.
 
 ## Metrics
 

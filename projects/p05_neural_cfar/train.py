@@ -69,15 +69,17 @@ def evaluate(model: nn.Module, x: torch.Tensor, y_true: torch.Tensor,
 
 
 def cfar_baseline(x_np: np.ndarray, y_np: np.ndarray, pfa: float = 1e-2) -> float:
-    """CA-CFAR baseline: 패치 중심 셀에 대해 주변 training cells로 문턱값 결정.
+    """CFAR-like patch baseline on normalized log-domain inputs.
 
-    패치 크기 15x15, guard=1, train=3 (패치 내 적용)
+    This is intentionally a lightweight teaching baseline: it applies the
+    guard/training-cell thresholding idea to the 15x15 normalized ch0 patch.
+    It is not a full classical CA-CFAR implementation on linear-power RDM cells.
     """
     N = len(x_np)
     # 중심 셀 magnitude (ch0 기준)
     half = 7  # PATCH // 2
 
-    # 패치 내 CA-CFAR: center vs training region
+    # 패치 내 CFAR-like threshold: center vs training region
     # guard_ring=1, train_ring=3 → inner 3x3 guard, outer ring for training
     g = 1
     t = 3
@@ -184,7 +186,7 @@ def main():
     # --- CA-CFAR baseline ---
     x_np = x_test.cpu().numpy()
     y_np = y_test.cpu().numpy()
-    print("\n[Baseline] CA-CFAR (patch-level)...")
+    print("\n[Baseline] CFAR-like patch threshold (normalized log-domain)...")
     cfar_metrics = cfar_baseline(x_np, y_np, pfa=1e-2)
     print(f"  Pd:                 {cfar_metrics['pd']:.4f}")
     print(f"  Pfa (actual):       {cfar_metrics['pfa']:.4f}")
@@ -193,7 +195,7 @@ def main():
     # --- 저장 ---
     all_metrics = {
         "neural_cfar": metrics,
-        "ca_cfar_baseline": cfar_metrics,
+        "patch_cfar_baseline": cfar_metrics,
     }
     metrics_path = artifact_dir / "metrics.json"
     with open(metrics_path, "w") as f:

@@ -63,7 +63,7 @@ def generate_doa_sample(
     cov_real : ndarray (2, N_rx, N_rx)
         Sample covariance의 real/imag 스택.
     spectrum_label : ndarray (grid_size,)
-        GT pseudo-spectrum (Gaussian peaks at true angles).
+        GT Gaussian angle heatmap (peaks at true angles).
     angles_true : list of float
         True source angles (degrees).
     meta : dict
@@ -130,7 +130,7 @@ def generate_doa_sample(
 
     cov_real = np.stack([R_norm.real, R_norm.imag], axis=0)  # (2, N_rx, N_rx)
 
-    # --- GT pseudo-spectrum ---
+    # --- GT Gaussian angle heatmap ---
     grid = np.linspace(grid_range[0], grid_range[1], grid_size)
     spectrum_label = np.zeros(grid_size, dtype=np.float32)
     # For moving targets, use midpoint angles as ground truth

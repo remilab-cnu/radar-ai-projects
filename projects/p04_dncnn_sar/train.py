@@ -8,7 +8,7 @@ Usage:
     # Train only (existing data)
     python train.py --epochs 30
 
-    # Smoke test (CPU, tiny data, 2 epochs)
+    # Smoke test (CPU, tiny 64x64 data, 2 epochs)
     python train.py --generate --smoke
 
     # Eval only
@@ -126,12 +126,15 @@ def main():
     args = p.parse_args()
 
     if args.smoke:
-        args.n_train     = 256
-        args.n_val       = 64
-        args.n_test      = 64
+        args.n_train     = 32
+        args.n_val       = 8
+        args.n_test      = 8
+        args.image_size  = 64
         args.epochs      = 2
-        args.batch_size  = 4
-        args.eval_samples = 20
+        args.batch_size  = 8
+        args.n_filters   = 16
+        args.n_layers    = 5
+        args.eval_samples = 4
 
     seed_everything(args.seed)
 

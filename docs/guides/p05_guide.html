@@ -42,7 +42,7 @@
   <div class="card">
     <h3>CA-CFAR의 동작 원리와 한계</h3>
     <p>
-      전통적인 <strong>CA-CFAR(Cell-Averaging CFAR)</strong>는 Cell Under Test(CUT) 주변의 training cells 평균으로 잡음 세기를 추정하고,
+      전통적인 <strong>CA-CFAR(Cell-Averaging CFAR)</strong>는 원본 선형 전력 RDM에서 Cell Under Test(CUT) 주변의 training cells 평균으로 잡음 세기를 추정하고,
       목표 Pfa(오탐률)에 맞는 임계값 <code>T = α × 잡음추정</code>을 계산합니다.
       CUT의 에너지가 T를 넘으면 "표적 있음"으로 판단합니다.
     </p>
@@ -56,7 +56,7 @@
   <div class="card">
     <h3>Neural CFAR: 패치 기반 학습으로 해결</h3>
     <p>
-      Neural CFAR는 CA-CFAR의 수식 기반 임계값 대신, <strong>작은 CNN이 패치 전체의 형상을 학습</strong>하여 탐지 결정을 내립니다.
+      Neural CFAR는 수식 기반 임계값 대신, <strong>작은 CNN이 패치 전체의 형상을 학습</strong>하여 탐지 결정을 내립니다. 이 저장소의 baseline은 원본 선형 전력 RDM이 아니라 정규화된 log-domain 15×15 패치에 guard/training-cell 아이디어를 적용한 교육용 CFAR-like 비교군입니다.
       클러터 분포를 사전에 가정하지 않고, 다양한 SNR 환경의 패치를 학습 데이터로 사용하여 비균일 클러터에도 강인합니다.
     </p>
     <p>
@@ -137,7 +137,7 @@ RDM (Nd × Nr)
       <h3>train.py</h3>
       <p><span class="badge-gray">3단계</span></p>
       <p>
-        데이터 로드, 모델 학습, CA-CFAR baseline 비교, 평가 지표 계산까지 전체 파이프라인을 실행합니다.
+        데이터 로드, 모델 학습, CFAR-like patch baseline 비교, 평가 지표 계산까지 전체 파이프라인을 실행합니다.
       </p>
       <p>
         <strong>출력:</strong> <code>artifacts/best_model.pt</code>, <code>artifacts/metrics.json</code>
@@ -265,7 +265,7 @@ for bin_idx, snr_db in enumerate(snr_bins):
       <ul>
         <li><code>PATCH = 15</code> → <code>PATCH = 11</code>: 패치를 좁히면 CUT 주변 context가 줄어 어떻게 될까요?</li>
         <li><code>SNR_BINS = [0.0, 5.0, 10.0, 15.0, 20.0, 25.0]</code> → <code>[0.0, 5.0, 10.0]</code>: 저SNR 구간만 학습하면 고SNR 성능이 유지될까요?</li>
-        <li>clutter_type을 <code>'mixed'</code>에서 <code>'ground'</code>나 <code>'rain'</code>으로 바꾸면 성능이 어떻게 달라지나요?</li>
+        <li><code>shared/clutter_model.py</code>의 clutter_type을 <code>'mixed'</code>에서 <code>'zero_doppler'</code>, <code>'distributed'</code>, <code>'multipath'</code> 중 하나로 바꾸면 성능이 어떻게 달라지나요?</li>
       </ul>
     </div>
   </div>
@@ -453,7 +453,7 @@ main()
   │    → ROC-AUC, Balanced Accuracy, Pd@Pfa=1e-2, Pd@Pfa=1e-3
   │    → Per-SNR Pd@Pfa (SNR bin별 분석)
   │
-  ├─ cfar_baseline(x_np, y_np)        ← CA-CFAR와 성능 비교
+  ├─ cfar_baseline(x_np, y_np)        ← log-domain patch baseline과 성능 비교
   │
   └─ json.dump → artifacts/metrics.json
       </pre>
@@ -480,7 +480,7 @@ main()
   </div>
 
   <div class="card">
-    <h3>cfar_baseline() — 고전 CA-CFAR와 비교</h3>
+    <h3>cfar_baseline() — 교육용 log-domain patch baseline과 비교</h3>
     <pre><code>def cfar_baseline(x_np, y_np, pfa=1e-2):
     g = 1   # guard cells: CUT 바로 옆 1칸 (표적 에너지 누설 방지)
     t = 3   # train cells: guard 바깥 3칸 (잡음 추정에 사용)
@@ -492,9 +492,9 @@ main()
     #   T = alpha * noise_est               ← 임계값
     #   탐지 여부 = center_pow &gt; T</code></pre>
     <p>
-      패치 내에서 CA-CFAR를 적용합니다. 15×15 패치 중심(7, 7)이 CUT이고,
+      패치 내에서 CFAR-like threshold를 적용합니다. 15×15 패치 중심(7, 7)이 CUT이고,
       중심에서 guard(1칸) + train(3칸) 안쪽 영역을 training cells로 사용합니다.
-      이 함수의 결과를 Neural CFAR의 결과와 비교하면 신경망의 이점이 수치로 드러납니다.
+      이 함수는 고전 CA-CFAR의 완전한 구현이 아니라 정규화된 log-domain 패치용 교육 baseline입니다. 결과를 Neural CFAR와 비교할 때 이 한계를 함께 해석해야 합니다.
     </p>
   </div>
 
@@ -565,7 +565,7 @@ main()
       "pd_pfa1e2_snr25dB": 0.9945    ← 고SNR: 쉬운 구간
     }
   },
-  "ca_cfar_baseline": {
+  "patch_cfar_baseline": {
     "pd":                 0.6012,
     "pfa":                0.0098,
     "balanced_accuracy":  0.6534
@@ -631,11 +631,11 @@ python train.py --generate --smoke</code></pre>
         <tr>
           <td><code>neural_cfar.per_snr.pd_pfa1e2_snr0dB</code></td>
           <td>0 dB SNR에서의 탐지 확률 (가장 어려운 구간)</td>
-          <td>CA-CFAR보다 높으면 성공</td>
+          <td>patch baseline보다 높으면 성공</td>
         </tr>
         <tr>
-          <td><code>ca_cfar_baseline.balanced_accuracy</code></td>
-          <td>CA-CFAR 기준 Balanced Accuracy</td>
+          <td><code>patch_cfar_baseline.balanced_accuracy</code></td>
+          <td>patch baseline 기준 Balanced Accuracy</td>
           <td>~0.65 (목표: Neural CFAR &gt; 0.85)</td>
         </tr>
       </tbody>
@@ -742,7 +742,7 @@ nn.Linear(128, 128)   # FC도 맞춰서</code></pre>
       <thead>
         <tr>
           <th>지표</th>
-          <th>CA-CFAR (baseline)</th>
+          <th>Patch CFAR-like baseline</th>
           <th>Neural CFAR (목표)</th>
         </tr>
       </thead>

@@ -166,10 +166,6 @@ def evaluate_model(model: nn.Module, split: str = "test",
     sir_gains = []
     clean_nmses = []
 
-    data_raw = load_hdf5(DATA_DIR / f"{split}.h5", ["sir_db"])
-    input_sir = data_raw["sir_db"]
-    idx = 0
-
     for x, y in loader:
         x = x.to(device)
         si_hat = model(x)  # (B, 2, 512)
@@ -207,8 +203,6 @@ def evaluate_model(model: nn.Module, split: str = "test",
             p_y_clean = np.mean(y_clean_np[b] ** 2) + 1e-20
             p_err_clean = np.mean((y_clean_np[b] - clean_hat_np[b]) ** 2)
             clean_nmses.append(p_err_clean / p_y_clean)
-
-        idx += B
 
     return {
         "cancellation_db_mean": float(np.mean(cancellation_dbs)),

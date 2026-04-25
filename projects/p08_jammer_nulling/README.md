@@ -7,6 +7,8 @@ LCMV(Linearly Constrained Minimum Variance) 빔포머의 null steering에 활용
 
 수신 공분산 행렬과 원하는 신호의 look angle을 입력으로,
 재머 각도를 회귀 추정하여 추정 방향에 null을 배치한다.
+재머가 2개인 장면에서는 더 강한(primary) 재머 하나만 레이블과 null-steering
+평가 대상으로 삼는다.
 
 신호 모델:
 ```

@@ -55,9 +55,12 @@ SI 추정 정확도와 클린 신호 복원 품질을 동시에 최적화한다.
 python generate_data.py   # 전체 데이터셋 생성
 ```
 
-- **TX 기준 신호** (`tx_ref`): FMCW chirp, 2채널 [real, imag], 512 샘플
+- **TX 기준 신호** (`tx_ref`): chirp-like complex reference, 2채널 [real, imag], 512 샘플
 - **SI 채널**: 2~5탭 복소 FIR + 30% 확률로 3차 비선형항 추가
-- **SIR**: -10 ~ +20 dB (SI가 표적보다 최대 10배 이상 강함)
+- **표적 에코**: 교육용 단순화 모델(지연된 협대역 Doppler tone). 실제 FMCW beat-domain
+  echo fidelity를 목표로 한 생성기는 아니다.
+- **`sir_db` 저장값**: -10 ~ +20 dB의 SI-to-echo power ratio
+  (사실상 ISR; +20 dB이면 SI가 표적 에코보다 100배 강하고, -10 dB이면 0.1배)
 - **SNR**: 5 ~ 25 dB
 - **분할:** train 18K / val 3K / test 3K
 
@@ -69,7 +72,7 @@ HDF5 키:
 | `rx_mix` | `(N, 2, 512)` | 수신 혼합 신호 |
 | `y_si` | `(N, 2, 512)` | SI 컴포넌트 (GT) |
 | `y_clean` | `(N, 2, 512)` | 표적+잡음 (eval용) |
-| `sir_db` | `(N,)` | 샘플별 SIR [dB] |
+| `sir_db` | `(N,)` | 샘플별 SI-to-echo ratio [dB] (legacy key name) |
 | `snr_db` | `(N,)` | 샘플별 SNR [dB] |
 
 ## Training
@@ -97,11 +100,11 @@ python model.py
 
 평가 지표:
 - **Cancellation Depth (dB)**: `10·log10(‖y_si‖² / ‖y_si - si_hat‖²)`
-- **Output SIR Gain (dB)**: 출력 SIR - 입력 SIR
+- **Output SIR Gain (dB)**: 출력 clean-to-residual-SI 비율 − 입력 clean-to-SI 비율
 - **Clean NMSE**: `‖y_clean - clean_hat‖² / ‖y_clean‖²`
 
 학습 팁:
-- SIR이 낮을수록 (SI >> 표적) 문제가 어려움 → SIR별 성능 분석 권장
+- 저장된 `sir_db`가 높을수록 (SI >> 표적) 문제가 어려움 → `sir_db` 구간별 성능 분석 권장
 - 비선형 SI는 선형 NLMS로 완전히 제거 불가 → DNN 장점이 부각되는 시나리오
 - Bottleneck 크기(256)를 줄이면 모델 경량화 가능
 

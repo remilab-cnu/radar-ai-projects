@@ -1,11 +1,14 @@
 # P09: RD Map Super-Resolution
 
-Range-Doppler Map을 저해상도(32×32)에서 고해상도(64×64)로 복원하는 딥러닝 모델.
+Range-Doppler Map을 저해상도(32×32)에서 고해상도(64×64)로 업샘플링하는 딥러닝 모델.
 
 ## Task
 
-제한된 chirp 수·샘플 수 환경에서 표적 분해능을 향상시키기 위해,
-저해상도 RD map을 입력으로 받아 고해상도 RD map을 출력한다.
+저해상도 RD map을 입력으로 받아 고해상도 RD map을 출력한다. 이 데모의 LR 입력은
+raw radar 수집량을 줄여 만든 것이 아니라 HR dB map을 후처리로 다운샘플링해 만든
+이미지 super-resolution 과제이다. 따라서 물리적 range/Doppler 분해능을 실제로
+극복한다고 해석하지 말고, simulator prior를 이용한 RDM 업샘플링/peak sharpening
+실험으로 해석한다.
 
 - **입력**: 저해상도 RD map `(B, 1, 32, 32)` — dB 정규화
 - **출력**: 고해상도 RD map `(B, 1, 64, 64)`

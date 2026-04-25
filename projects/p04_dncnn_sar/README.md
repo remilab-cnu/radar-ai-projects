@@ -1,17 +1,17 @@
 # P04: DnCNN-SAR Despeckling
 
-SAR image despeckling using DnCNN residual learning in the log-intensity domain.
+SAR image despeckling using DnCNN residual learning in the dB-magnitude domain.
 
 ## Task
 
-Given a speckle-corrupted SAR log-intensity image, predict the clean image.
+Given a speckle-corrupted SAR dB-magnitude image, predict the clean image.
 Evaluated against classical Lee, Frost, and Median filters.
 
 ## Architecture
 
 - **Model**: DnCNN-SAR -- 17-layer residual CNN (predict noise, subtract from input)
-- **Input**: `(B, 1, 256, 256)` -- log-intensity SAR patch normalized to [0, 1]
-- **Output**: `(B, 1, 256, 256)` -- despeckled log-intensity image
+- **Input**: `(B, 1, 256, 256)` -- dB-magnitude SAR patch normalized to [0, 1]
+- **Output**: `(B, 1, 256, 256)` -- despeckled dB-magnitude image
 - **Loss**: DespecklingLoss (Charbonnier w=0.8 + SSIM w=0.2)
 - **Parameters**: ~556K
 
@@ -21,7 +21,7 @@ Evaluated against classical Lee, Frost, and Median filters.
 # Generate data + train (default: 25K train, 30 epochs)
 python train.py --generate --epochs 30
 
-# Smoke test (256/64/64 samples, 2 epochs, CPU)
+# Smoke test (small 64x64 images, 2 epochs, CPU)
 python train.py --generate --smoke
 
 # Eval only
@@ -35,6 +35,9 @@ python train.py --generate --n_train 5000 --epochs 60 --batch_size 8
 
 Generated via `generate_data.py` using `shared/sar_simulator.py`.
 Simulated stripmap SAR scenes with random point targets, 1-5 looks speckle.
+Full/default datasets use 256×256 images. Smoke mode intentionally uses a
+smaller 64×64 image and fewer samples so the end-to-end check finishes quickly
+on CPU.
 
 | Split | Filename | Default size |
 |-------|----------|-------------|

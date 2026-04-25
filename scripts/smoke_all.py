@@ -2,8 +2,8 @@
 """Run smoke tests for all projects to verify they work end-to-end.
 
 Usage:
-    python smoke_all.py           # --generate --smoke (fast, default)
-    python smoke_all.py --full    # --generate --epochs 2 (more thorough)
+    python scripts/smoke_all.py           # --generate --smoke (fast, default)
+    python scripts/smoke_all.py --full    # --generate --epochs 2 (more thorough)
 """
 import argparse
 import subprocess

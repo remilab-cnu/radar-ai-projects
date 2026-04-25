@@ -1,16 +1,18 @@
 # P03: DeepMUSIC CNN
 
-Direction-of-Arrival (DoA) estimation using a CNN trained on covariance matrices, compared against classical MUSIC, MVDR, and CBF.
+Direction-of-Arrival (DoA) estimation using a CNN trained on covariance
+matrices, compared against classical MUSIC in the provided evaluation.
 
 ## Task
 
-Given a 2-channel real/imaginary sample covariance matrix from a ULA, estimate a pseudo-spectrum over the angle grid [-90, 90] degrees.
+Given a 2-channel real/imaginary sample covariance matrix from a ULA, regress an
+angle heatmap over the angle grid [-90, 90] degrees.
 
 ## Architecture
 
 - **Model**: DeepMUSIC -- 4-layer CNN encoder + FC head
 - **Input**: `(B, 2, N_rx, N_rx)` -- real/imag covariance
-- **Output**: `(B, 181)` -- pseudo-spectrum (sigmoid, values in [0,1])
+- **Output**: `(B, 181)` -- Gaussian angle heatmap (sigmoid, values in [0,1])
 - **Loss**: BCELoss
 - **Parameters**: ~19.3M (N_rx=12)
 

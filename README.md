@@ -84,7 +84,7 @@ python train.py --generate --epochs 30
 ```bash
 # 학습 결과는 artifacts/ 폴더에 저장됩니다
 ls artifacts/
-# → best_model.pt  metrics.json  history.json
+# → best_model.pt  metrics.json 또는 eval_results.json  history.json
 
 # 결과 수치 확인
 cat artifacts/metrics.json
@@ -160,7 +160,9 @@ python scripts/smoke_all.py --full
 
 ## Simulator Documentation
 
-All projects use physics-based simulators in `shared/`. No external datasets are needed — everything is generated synthetically from first principles.
+All projects use synthetic educational simulators or approximations. No external
+datasets are needed; the examples are designed for reproducible teaching rather
+than high-fidelity sensor validation.
 
 ### Signal Processing Chain
 
@@ -207,8 +209,8 @@ Derived properties:
 |----------|---------|---------------|
 | `range_res` | c / (2·BW) | 0.15 m |
 | `max_range` | fs·c·T / (4·BW) | 37.5 m |
-| `vel_res` | λ / (2·N_chirps·T) | 0.015 m/s |
-| `max_vel` | λ / (4·T) | 0.97 m/s |
+| `vel_res` | λ / (2·N_chirps·T) | 0.304 m/s |
+| `max_vel` | λ / (4·T) | 19.5 m/s |
 | `N_samples` | T_chirp × fs | 500 |
 
 #### `generate_scene(radar, targets, snr_db, seed)`
@@ -244,6 +246,11 @@ Output shape: `(N_rx, N_chirps, N_samples)` complex128.
 3. `fftshift` on Doppler axis
 
 Output shape: same as input, complex. Zero-Doppler is centered.
+
+Most learning datasets keep only the positive range-frequency half
+(`N_samples // 2`) after the FFT. With the default 500 ADC samples this gives
+250 range bins, so a default single-antenna RDM tensor is typically
+`(128 Doppler bins, 250 range bins)`.
 
 #### `range_angle_map(signal, radar, window_range, window_angle, N_angle)`
 
@@ -306,7 +313,7 @@ Direction-of-Arrival estimation utilities for ULA systems.
 | Coherent | 20% prob | Correlated source waveforms |
 | Moving | Configurable | Time-varying steering vectors |
 
-**Output**: Sample covariance `R̂` (2-channel real/imag, Frobenius-normalized) + Gaussian pseudo-spectrum label.
+**Output**: Sample covariance `R̂` (2-channel real/imag, Frobenius-normalized) + Gaussian angle-heatmap label.
 
 #### Classical Algorithms
 
@@ -453,7 +460,7 @@ radar-ai-projects/
 │       ├── model.py               PyTorch model definition
 │       └── train.py               Train + evaluate entry point
 ├── scripts/
-│   └── smoke_all.py           Smoke test all 10 projects
+│   └── smoke_all.py           Smoke test all 9 projects
 └── requirements.txt           Python dependencies
 ```
 

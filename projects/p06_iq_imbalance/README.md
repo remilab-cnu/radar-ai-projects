@@ -88,7 +88,9 @@ python train.py --eval_only --checkpoint artifacts/best_model.pt
 | NMSE 개선 | ~3 dB | > 8 dB |
 | IRR 개선 | ~10 dB | > 20 dB |
 
-Gram-Schmidt는 gain/phase는 부분 보정하지만 DC 오프셋을 제거하지 못한다.
+이 저장소의 Gram-Schmidt 기준선은 gain/phase를 부분 보정하지만 DC 오프셋 제거
+단계를 포함하지 않는다. 실제 고전적 I/Q 보정 파이프라인은 평균 제거 등 DC 보정을
+별도로 결합할 수 있다.
 
 평가 지표 설명:
 - **Gain/Phase MAE:** 파라미터 추정 정확도

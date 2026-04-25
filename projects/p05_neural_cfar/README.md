@@ -5,8 +5,10 @@
 FMCW 레이다의 Range-Doppler Map(RDM)에서 **Cell Under Test(CUT) 주변 15×15 패치**를 입력으로 받아
 표적 존재 여부를 이진 분류하는 소형 CNN을 학습한다.
 
-전통적인 CA-CFAR는 균일한 클러터 분포를 가정하여 비균일 클러터 환경에서 성능이 저하된다.
-Neural CFAR는 클러터 형상을 패치에서 직접 학습하여 이러한 한계를 극복한다.
+전통적인 CA-CFAR는 선형 전력 RDM의 주변 training cell 평균으로 문턱값을 정한다.
+이 데모의 baseline은 원본 RDM이 아니라 **정규화된 log-domain 15×15 패치** 위에서
+동일한 guard/training-cell 아이디어를 적용한 교육용 CFAR-like 비교군이다.
+Neural CFAR는 클러터 형상을 패치에서 직접 학습하여 이 단순 비교군의 한계를 관찰하게 한다.
 
 | 항목 | 형태 | 설명 |
 |------|------|------|
@@ -58,7 +60,7 @@ python train.py --eval_only --checkpoint artifacts/best_model.pt
 
 ## Expected Results
 
-| 지표 | CA-CFAR (baseline) | Neural CFAR (목표) |
+| 지표 | Patch CFAR-like baseline | Neural CFAR (목표) |
 |------|-------------------|-------------------|
 | ROC-AUC | ~0.80 | >0.92 |
 | Pd @ Pfa=1e-2 | ~0.60 | >0.80 |
@@ -69,7 +71,7 @@ python train.py --eval_only --checkpoint artifacts/best_model.pt
 
 학습 포인트:
 1. **2채널 입력의 의미:** ch0은 절대적 강도(global context), ch1은 패치 내 상대적 강도(local contrast)
-2. **CA-CFAR의 한계:** 클러터 경계, 다중경로 환경에서 오탐 증가
+2. **CFAR 계열의 한계:** 균일 클러터 가정이 깨지는 경계/다중경로 환경에서 오탐 증가
 3. **SNR vs. 탐지 성능:** ROC 곡선을 SNR bin별로 분리하면 저SNR에서의 개선폭이 더 크다
 4. **Pfa 제어:** 고정 threshold(0.5)가 아닌 score thresholding으로 Pfa를 조절한다
 

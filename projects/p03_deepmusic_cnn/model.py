@@ -4,7 +4,7 @@ Architecture:
     Input: (B, 2, N_rx, N_rx) -- real/imag of sample covariance
     -> 4x Conv2d (BN + ReLU)
     -> Flatten -> FC(512) -> ReLU -> Dropout -> FC(grid_size) -> Sigmoid
-    Output: (B, grid_size) -- pseudo-spectrum over angle grid
+    Output: (B, grid_size) -- Gaussian angle heatmap over angle grid
 """
 
 import torch
@@ -14,7 +14,7 @@ from common.train_utils import count_parameters
 
 
 class DeepMUSIC(nn.Module):
-    """CNN-based DoA pseudo-spectrum estimator.
+    """CNN-based DoA angle-heatmap estimator.
 
     Parameters
     ----------

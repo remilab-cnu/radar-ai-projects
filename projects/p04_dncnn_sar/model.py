@@ -1,4 +1,4 @@
-"""DnCNN-SAR model for SAR speckle removal via residual learning in log domain."""
+"""DnCNN-SAR model for SAR speckle removal via residual learning in dB magnitude."""
 
 from __future__ import annotations
 
@@ -11,15 +11,15 @@ from common.train_utils import count_parameters
 
 
 class DnCNNSAR(nn.Module):
-    """DnCNN-SAR: 17-layer residual CNN for SAR despeckling in log domain.
+    """DnCNN-SAR: 17-layer residual CNN for SAR despeckling in dB magnitude.
 
     Concept:
-        Multiplicative speckle in linear domain -> additive noise in log domain.
+        Multiplicative speckle in linear domain is compressed in dB magnitude.
         The network predicts the noise residual; the clean image is recovered as:
             clean = input - predicted_residual
 
-    Input:  (B, 1, H, W) -- log-intensity SAR patch
-    Output: (B, 1, H, W) -- despeckled log-intensity image
+    Input:  (B, 1, H, W) -- dB-magnitude SAR patch
+    Output: (B, 1, H, W) -- despeckled dB-magnitude image
     """
 
     def __init__(self, n_channels: int = 1, n_filters: int = 64, n_layers: int = 17) -> None:

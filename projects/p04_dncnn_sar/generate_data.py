@@ -3,7 +3,7 @@
 
 Usage:
     python generate_data.py                          # default: 25K/5K/5K
-    python generate_data.py --smoke                  # 256/64/64 samples
+    python generate_data.py --smoke                  # quick 64x64 CPU check
     python generate_data.py --n_train 10000
     python generate_data.py --out_dir custom/path
 """
@@ -122,7 +122,8 @@ def main():
     args = p.parse_args()
 
     if args.smoke:
-        args.n_train, args.n_val, args.n_test = 256, 64, 64
+        args.n_train, args.n_val, args.n_test = 32, 8, 8
+        args.image_size = 64
 
     seed_everything(args.seed)
 
