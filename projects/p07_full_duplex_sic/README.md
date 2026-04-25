@@ -57,11 +57,12 @@ python generate_data.py   # 전체 데이터셋 생성
 
 - **TX 기준 신호** (`tx_ref`): chirp-like complex reference, 2채널 [real, imag], 512 샘플
 - **SI 채널**: 2~5탭 복소 FIR + 30% 확률로 3차 비선형항 추가
-- **표적 에코**: 교육용 단순화 모델(지연된 협대역 Doppler tone). 실제 FMCW beat-domain
-  echo fidelity를 목표로 한 생성기는 아니다.
-- **`sir_db` 저장값**: -10 ~ +20 dB의 SI-to-echo power ratio
-  (사실상 ISR; +20 dB이면 SI가 표적 에코보다 100배 강하고, -10 dB이면 0.1배)
-- **SNR**: 5 ~ 25 dB
+- **표적 에코**: TX 기준 chirp를 지연시키고 Doppler phase를 곱한 waveform-consistent
+  echo. 전파/beat-chain 전체를 풀지는 않지만, 표적 성분은 더 이상 독립 tone이 아니다.
+- **`isr_db` 저장값**: -10 ~ +20 dB의 SI-to-echo power ratio
+  (`P_si/P_echo`; +20 dB이면 SI가 표적 에코보다 100배 강하고, -10 dB이면 0.1배)
+- **`sir_db` 저장값**: 기존 노트북/스크립트 호환을 위한 legacy alias이며 `isr_db`와 같은 값이다.
+- **SNR**: 5 ~ 25 dB, 기준 전력은 표적 에코(`P_echo/P_noise`)이다.
 - **분할:** train 18K / val 3K / test 3K
 
 HDF5 키:
@@ -72,8 +73,23 @@ HDF5 키:
 | `rx_mix` | `(N, 2, 512)` | 수신 혼합 신호 |
 | `y_si` | `(N, 2, 512)` | SI 컴포넌트 (GT) |
 | `y_clean` | `(N, 2, 512)` | 표적+잡음 (eval용) |
-| `sir_db` | `(N,)` | 샘플별 SI-to-echo ratio [dB] (legacy key name) |
-| `snr_db` | `(N,)` | 샘플별 SNR [dB] |
+| `isr_db` | `(N,)` | 샘플별 SI-to-echo ratio [dB] |
+| `sir_db` | `(N,)` | `isr_db`와 동일한 legacy alias |
+| `snr_db` | `(N,)` | 샘플별 echo-to-noise SNR [dB] |
+| `nonlinear` | `(N,)` | 3차 SI leakage 포함 여부 |
+
+## Physics Contract / Allowed Simplification / Not Claimed
+
+- **Physics contract:** `rx_mix = y_si + target_echo + noise`; `y_si`는 TX 기준 파형의
+  짧은 복소 FIR 누설(일부 샘플은 cubic leakage 포함)이고, 표적 에코는 같은 `tx_ref`의
+  delayed/Doppler-scaled copy이다. `isr_db`는 측정 전력 기준 `P_si/P_echo`, `snr_db`는
+  `P_echo/P_noise`를 의미한다.
+- **Allowed simplification:** 단일 TX chirp, 단일 표적, 짧은 baseband record, 통계적 채널
+  랜덤화를 사용한다. 빠른 CPU handout을 위해 안테나 격리, ADC, RF front-end 포화,
+  full FMCW range-Doppler processing은 생략한다.
+- **Not claimed:** 실제 전이중 RF 하드웨어의 100+ dB cancellation, 다중경로/다중표적
+  scene fidelity, calibrated PA/LO/ADC impairment model, 또는 deployment-ready SIC가 아니다.
+  이 프로젝트는 waveform-consistent synthetic handout과 NLMS-vs-DNN 비교를 목표로 한다.
 
 ## Training
 
@@ -92,11 +108,13 @@ python model.py
 
 | 지표 | NLMS (baseline) | SICUNet (목표) |
 |------|----------------|---------------|
-| Cancellation Depth (dB) | ~20 dB (선형) | >35 dB |
+| Cancellation Depth (dB) | 선형 샘플에서 더 높고 비선형 샘플에서 낮음 | >35 dB |
 | Output SIR Gain (dB) | ~15 dB | >25 dB |
 | Clean NMSE | — | <-15 dB |
 
-**기준선**: 32탭 복소 NLMS 적응 필터
+**기준선**: 8탭 복소 NLMS 적응 필터. 생성기의 SI FIR은 2~5탭이므로 선형 샘플은
+상대적으로 잘 추적하지만, cubic leakage가 있는 샘플은 `nlms_nonlinear_cancellation_db_mean`
+에서 한계를 보인다.
 
 평가 지표:
 - **Cancellation Depth (dB)**: `10·log10(‖y_si‖² / ‖y_si - si_hat‖²)`
@@ -104,7 +122,7 @@ python model.py
 - **Clean NMSE**: `‖y_clean - clean_hat‖² / ‖y_clean‖²`
 
 학습 팁:
-- 저장된 `sir_db`가 높을수록 (SI >> 표적) 문제가 어려움 → `sir_db` 구간별 성능 분석 권장
+- 저장된 `isr_db`/legacy `sir_db`가 높을수록 (SI >> 표적) 문제가 어려움 → ISR 구간별 성능 분석 권장
 - 비선형 SI는 선형 NLMS로 완전히 제거 불가 → DNN 장점이 부각되는 시나리오
 - Bottleneck 크기(256)를 줄이면 모델 경량화 가능
 
