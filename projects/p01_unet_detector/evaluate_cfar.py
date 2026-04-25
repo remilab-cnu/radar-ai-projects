@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run verified CA-CFAR sweeps for P01 from baseline-grade linear RDM data."""
+"""Run verified CA-CFAR sweeps for P01 from linear RDM data."""
 from __future__ import annotations
 
 import argparse

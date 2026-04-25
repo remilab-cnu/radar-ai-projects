@@ -24,7 +24,7 @@ def figure_curves(cfar_val, unet_val, cfar_test, unet_test, out_dir: Path):
         (unet_val, unet_test, "U-Net", "#dc2626", "s"),
     ]
     for val_payload, test_payload, label, color, marker in series:
-        # Validation sweep selects an operating policy; held-out test point reports it.
+        # Validation sweep selects the detector setting; the test-split point reports it.
         # Plotting both prevents test metrics from being mistaken for tuned points.
         payload = val_payload
         rows = payload.get("results", [])
@@ -38,7 +38,7 @@ def figure_curves(cfar_val, unet_val, cfar_test, unet_test, out_dir: Path):
             ax.scatter([val_sel["Pfa"]], [val_sel["Pd"]], s=70, color="white", edgecolor=color, linewidth=1.8, zorder=5, label=f"{label} selected on val")
         test_sel = test_payload.get("selected_policy", {})
         if test_sel:
-            ax.scatter([test_sel["Pfa"]], [test_sel["Pd"]], s=95, color=color, edgecolor="black", marker="*", zorder=6, label=f"{label} held-out test")
+            ax.scatter([test_sel["Pfa"]], [test_sel["Pd"]], s=95, color=color, edgecolor="black", marker="*", zorder=6, label=f"{label} test split")
     ax.set_xscale("log")
     ax.set_xlabel("False-alarm probability (pixel-level Pfa)")
     ax.set_ylabel("Detection probability (Pd)")
@@ -80,7 +80,7 @@ def main() -> None:
     figure_metric_table(cfar_test, unet_test, out_dir)
     summary = {
         "figures": ["p01_verified_pd_pfa_curve.png", "p01_verified_metric_table.png"],
-        "figure_contract": "curves show validation sweeps; star markers and table show held-out test outcomes for the selected policies",
+        "figure_note": "curves show validation sweeps; star markers and table show test split outcomes for the selected detector settings",
         "cfar_test": cfar_test["selected_policy"],
         "unet_test": unet_test["selected_policy"],
     }

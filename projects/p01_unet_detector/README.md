@@ -8,7 +8,7 @@ This project is the runnable source of truth for Week 10 lecture material.
 Given a 2-channel RDM (log-magnitude + phase), predict a binary target mask.
 Evaluated against CA-CFAR as a classical baseline.  The baseline must run
 on the saved linear RDM magnitude (`rdm_mag_linear`), not the normalized
-display channel used as the neural-network input.
+display-normalized channel used as the neural-network input.
 
 ## Architecture
 
@@ -31,7 +31,7 @@ python train.py --generate --smoke --base_ch 8
 python train.py --eval_only --checkpoint artifacts/best_model.pt
 # If the checkpoint was created by the CPU smoke command above, add: --base_ch 8
 
-# Verify the data contract and compare operating-point policies
+# Verify the data format and compare detector settings
 python analyze_data_contract.py --data_dir data --split val --out_dir artifacts/verified_p01
 python evaluate_cfar.py --data_dir data --split val --sweep --out artifacts/verified_p01/p01_cfar_sweep_val.json
 python evaluate_cfar.py --data_dir data --split test --policy-from artifacts/verified_p01/p01_cfar_sweep_val.json --out artifacts/verified_p01/p01_cfar_selected_test.json
@@ -73,4 +73,4 @@ samples and keeps the positive range-frequency half after the FFT.
 
 Results saved to `artifacts/eval_results.json`.
 Verified lecture/report artifacts should also include the validation-selected
-CFAR policy, validation-selected neural threshold, and held-out test metrics.
+CFAR settings, validation-selected neural threshold, and final test-split metrics.

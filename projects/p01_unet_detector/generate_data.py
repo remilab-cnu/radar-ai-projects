@@ -118,7 +118,7 @@ def main():
     print(f"  Radar: Nc={radar.N_chirps}, Nr={radar.N_samples // 2}")
     print(f"  range_res={radar.range_res:.3f} m, vel_res={radar.vel_res:.3f} m/s")
     print(f"  Channels: {N_CHANNELS}")
-    print(f"  Schema: v{SCHEMA_VERSION} with baseline-grade rdm_mag_linear")
+    print(f"  Schema: v{SCHEMA_VERSION} with linear rdm_mag_linear for CA-CFAR")
 
     for name, n, seed in [
         ("det_train.h5", args.n_train, args.seed),
