@@ -133,7 +133,8 @@ def generate_scene_with_clutter(
 
 
 def generate_random_scene(radar, rng, n_targets_range=(1, 15),
-                          snr_range=(5.0, 25.0), clutter_power_range=(-15.0, -5.0)):
+                          snr_range=(5.0, 25.0), clutter_power_range=(-15.0, -5.0),
+                          return_raw=False):
     """랜덤 시나리오 생성 (학습 데이터용).
 
     Returns
@@ -141,6 +142,8 @@ def generate_random_scene(radar, rng, n_targets_range=(1, 15),
     rdm_input : ndarray (2, N_chirps, N_range_half) — noise-floor-ref log-mag + phase
     target_mask : ndarray (N_chirps, N_range_half)
     meta : dict
+        If return_raw=True, includes rdm_mag_linear, rdm_power, and target_info
+        for baseline-grade evaluation.
     """
     K = rng.integers(n_targets_range[0], n_targets_range[1] + 1)
     snr_db = rng.uniform(snr_range[0], snr_range[1])
@@ -183,5 +186,11 @@ def generate_random_scene(radar, rng, n_targets_range=(1, 15),
         'clutter_power_db': float(clutter_power_db),
         'noise_floor': float(noise_floor),
     }
+    if return_raw:
+        meta.update({
+            'rdm_mag_linear': mag.astype(np.float32),
+            'rdm_power': (mag ** 2).astype(np.float32),
+            'target_info': target_info,
+        })
 
     return rdm_input, target_mask, meta

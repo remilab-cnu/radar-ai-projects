@@ -8,7 +8,7 @@
 """
 
 import numpy as np
-from scipy.signal import find_peaks
+from scipy.signal import convolve2d, find_peaks
 
 C = 299_792_458.0  # 광속 [m/s]
 
@@ -324,18 +324,20 @@ def ca_cfar_2d(rdm_mag, guard=(2, 2), train=(4, 4), pfa=1e-4):
     n_train = (2*(gd+td)+1) * (2*(gr+tr)+1) - (2*gd+1) * (2*gr+1)
     alpha = n_train * (pfa ** (-1.0 / n_train) - 1)
 
-    detections = np.zeros_like(rdm_mag, dtype=bool)
+    kernel = np.ones((2*(gd+td)+1, 2*(gr+tr)+1), dtype=np.float64)
+    kernel[td:td+2*gd+1, tr:tr+2*gr+1] = 0.0
+    noise_sum = convolve2d(power, kernel, mode='same', boundary='fill', fillvalue=0.0)
+    threshold = alpha * noise_sum / n_train
 
-    for i in range(gd + td, Nd - gd - td):
-        for j in range(gr + tr, Nr - gr - tr):
-            window = power[i-gd-td:i+gd+td+1, j-gr-tr:j+gr+tr+1]
-            guard_mask = np.zeros_like(window, dtype=bool)
-            guard_mask[td:td+2*gd+1, tr:tr+2*gr+1] = True
-            noise_est = np.mean(window[~guard_mask])
-            T = alpha * noise_est
-            if power[i, j] > T:
-                detections[i, j] = True
-
+    detections = power > threshold
+    margin_d = gd + td
+    margin_r = gr + tr
+    if margin_d:
+        detections[:margin_d, :] = False
+        detections[Nd-margin_d:, :] = False
+    if margin_r:
+        detections[:, :margin_r] = False
+        detections[:, Nr-margin_r:] = False
     return detections
 
 
