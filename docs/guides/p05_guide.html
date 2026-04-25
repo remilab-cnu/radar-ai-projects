@@ -27,6 +27,15 @@
   <h2>1. 이 프로젝트는 뭘 하는 건가요?</h2>
 
   <div class="card">
+    <h3>Physics contract / Allowed simplification / Not claimed</h3>
+    <ul>
+      <li><strong>Physics contract:</strong> FMCW beat signal에서 range-Doppler FFT를 만들고, CUT 중심 15×15 패치를 추출합니다. Classical CA-CFAR baseline은 정규화 영상이 아니라 저장된 <code>patch_power</code> 선형 전력 cell에 적용합니다.</li>
+      <li><strong>Allowed simplification:</strong> 단일 수신기, 제한된 SNR bin, <code>mixed</code> clutter, 15×15 local patch classifier로 CPU handout runtime을 유지합니다.</li>
+      <li><strong>Not claimed:</strong> log-domain network input이 CA-CFAR의 통계 domain이라는 주장이나, 이 실험이 production-grade full-frame tracker라는 주장은 하지 않습니다.</li>
+    </ul>
+  </div>
+
+  <div class="card">
     <h3>레이다 수신기와 탐지 문제</h3>
     <p>
       FMCW(Frequency-Modulated Continuous Wave) 레이다는 송신 신호와 수신 신호를 믹싱하여 <strong>Beat Signal</strong>을 만들고,
@@ -56,8 +65,8 @@
   <div class="card">
     <h3>Neural CFAR: 패치 기반 학습으로 해결</h3>
     <p>
-      Neural CFAR는 수식 기반 임계값 대신, <strong>작은 CNN이 패치 전체의 형상을 학습</strong>하여 탐지 결정을 내립니다. 이 저장소의 baseline은 원본 선형 전력 RDM이 아니라 정규화된 log-domain 15×15 패치에 guard/training-cell 아이디어를 적용한 교육용 CFAR-like 비교군입니다.
-      클러터 분포를 사전에 가정하지 않고, 다양한 SNR 환경의 패치를 학습 데이터로 사용하여 비균일 클러터에도 강인합니다.
+      Neural CFAR는 수식 기반 임계값 대신, <strong>작은 CNN이 패치 전체의 형상을 학습</strong>하여 탐지 결정을 내립니다. 이 저장소의 baseline은 같은 CUT 주변의 <code>patch_power</code> 선형 전력 15×15 패치에 guard/training-cell CA-CFAR를 적용합니다.
+      모델은 정규화된 2채널 패치를 입력으로 사용하지만, Pfa를 주장하는 classical baseline은 선형 전력 domain에서만 계산합니다.
     </p>
     <p>
       이 프로젝트에서 모델의 입출력은 아래와 같습니다:
@@ -70,6 +79,7 @@ RDM (Nd × Nr)
   ┌─────────────────┐
   │  15×15 패치     │  ch0: noise-floor 기준 dB magnitude
   │  (CUT 중심)     │  ch1: 패치 내 min-max 정규화
+  │                 │  patch_power: CA-CFAR용 선형 전력
   └─────────────────┘
      │  (2, 15, 15)
      ▼
@@ -137,7 +147,7 @@ RDM (Nd × Nr)
       <h3>train.py</h3>
       <p><span class="badge-gray">3단계</span></p>
       <p>
-        데이터 로드, 모델 학습, CFAR-like patch baseline 비교, 평가 지표 계산까지 전체 파이프라인을 실행합니다.
+        데이터 로드, 모델 학습, linear-power patch CA-CFAR baseline 비교, 평가 지표 계산까지 전체 파이프라인을 실행합니다.
       </p>
       <p>
         <strong>출력:</strong> <code>artifacts/best_model.pt</code>, <code>artifacts/metrics.json</code>
@@ -453,7 +463,7 @@ main()
   │    → ROC-AUC, Balanced Accuracy, Pd@Pfa=1e-2, Pd@Pfa=1e-3
   │    → Per-SNR Pd@Pfa (SNR bin별 분석)
   │
-  ├─ cfar_baseline(x_np, y_np)        ← log-domain patch baseline과 성능 비교
+  ├─ cfar_baseline(patch_power, y_np) ← 선형 전력 patch CA-CFAR와 성능 비교
   │
   └─ json.dump → artifacts/metrics.json
       </pre>
@@ -480,21 +490,21 @@ main()
   </div>
 
   <div class="card">
-    <h3>cfar_baseline() — 교육용 log-domain patch baseline과 비교</h3>
-    <pre><code>def cfar_baseline(x_np, y_np, pfa=1e-2):
+    <h3>cfar_baseline() — linear-power patch CA-CFAR와 비교</h3>
+    <pre><code>def cfar_baseline(patch_power, y_np, pfa=1e-2):
     g = 1   # guard cells: CUT 바로 옆 1칸 (표적 에너지 누설 방지)
     t = 3   # train cells: guard 바깥 3칸 (잡음 추정에 사용)
     # n_train_cells = (2*(g+t)+1)^2 - (2*g+1)^2 = 9^2 - 3^2 = 81 - 9 = 72
     alpha = n_train_cells * (pfa**(-1/n_train_cells) - 1)  # CFAR 계수
-    # 각 패치에서:
-    #   center_pow = patch[7,7]^2           ← CUT 전력
-    #   noise_est  = mean(training cells^2) ← 잡음 추정
+    # 각 선형 전력 패치에서:
+    #   center_pow = patch_power[7,7]       ← CUT 전력
+    #   noise_est  = mean(training cells)   ← 잡음 전력 추정
     #   T = alpha * noise_est               ← 임계값
     #   탐지 여부 = center_pow &gt; T</code></pre>
     <p>
-      패치 내에서 CFAR-like threshold를 적용합니다. 15×15 패치 중심(7, 7)이 CUT이고,
-      중심에서 guard(1칸) + train(3칸) 안쪽 영역을 training cells로 사용합니다.
-      이 함수는 고전 CA-CFAR의 완전한 구현이 아니라 정규화된 log-domain 패치용 교육 baseline입니다. 결과를 Neural CFAR와 비교할 때 이 한계를 함께 해석해야 합니다.
+      패치 내에서 CA-CFAR threshold를 적용합니다. 15×15 패치 중심(7, 7)이 CUT이고,
+      중심에서 guard(1칸)를 제외한 train(3칸) ring의 선형 전력 평균을 잡음 전력으로 사용합니다.
+      정규화 log-domain network input은 CNN에만 사용하고, classical Pfa 계산은 선형 전력 <code>patch_power</code>에서 수행합니다.
     </p>
   </div>
 
@@ -565,10 +575,14 @@ main()
       "pd_pfa1e2_snr25dB": 0.9945    ← 고SNR: 쉬운 구간
     }
   },
-  "patch_cfar_baseline": {
-    "pd":                 0.6012,
-    "pfa":                0.0098,
-    "balanced_accuracy":  0.6534
+  "patch_ca_cfar_linear_power": {
+    "pfa_1e2": {
+      "pd":                 0.6012,
+      "pfa":                0.0098,
+      "balanced_accuracy":  0.6534,
+      "target_pfa":         0.01
+    },
+    "pfa_1e3": { "...": "same fields at target Pfa=0.001" }
   }
 }</code></pre>
   </div>
@@ -742,7 +756,7 @@ nn.Linear(128, 128)   # FC도 맞춰서</code></pre>
       <thead>
         <tr>
           <th>지표</th>
-          <th>Patch CFAR-like baseline</th>
+          <th>Linear-power patch CA-CFAR baseline</th>
           <th>Neural CFAR (목표)</th>
         </tr>
       </thead>
