@@ -7,15 +7,49 @@ Boulic kinematic body model (11-segment)을 이용한
     from shared.micro_doppler import generate_har_sample, ACTIVITY_LABELS
 """
 
+from dataclasses import dataclass
+
 import numpy as np
 from scipy.signal import stft as scipy_stft
 from scipy.ndimage import zoom
 
+from shared.fmcw_simulator import FMCWRadar, add_complex_awgn, range_axis
+
 C = 299_792_458.0
+P02_DOPPLER_ALIAS_SAFETY_FACTOR = 0.90
 
 ACTIVITY_LABELS = ['walk', 'run', 'sit_down', 'fall', 'wave', 'idle']
 ACTIVITY_TO_IDX = {a: i for i, a in enumerate(ACTIVITY_LABELS)}
 N_CLASSES = len(ACTIVITY_LABELS)
+
+
+def radar_max_unambiguous_velocity_mps(radar, prf=None):
+    """Return one-sided slow-time Doppler Nyquist velocity for monostatic radar."""
+    slow_prf = (1.0 / radar.PRI) if prf is None else float(prf)
+    return float(radar.lam * slow_prf / 4.0)
+
+
+@dataclass(frozen=True)
+class P02PedestrianScatterer:
+    """One P02-only pedestrian scatterer.
+
+    This mirrors the useful part of the radar-deconv scatter scene idea
+    (multiple weighted scatterers per target, optional micro-displacement)
+    without depending on that research package or changing P01/P03.
+    """
+
+    name: str
+    parent_segment: str
+    scatter_kind: str
+    range_m: np.ndarray
+    radial_velocity_mps: np.ndarray
+    rcs_m2: float
+    amplitude_weight: float
+    range_offset_m: float
+    initial_phase_rad: float
+    micro_disp_amp_m: float
+    micro_freq_hz: float
+    micro_phase_rad: float
 
 
 # ─── Body Model ───────────────────────────────────────────────────────────────
@@ -257,11 +291,161 @@ def _forward_kinematics(angles):
     return positions
 
 
+def _segment_scatter_kind(segment_name):
+    if segment_name == "torso":
+        return "torso"
+    if segment_name == "head":
+        return "head"
+    return "limb"
+
+
+def _activity_micro_frequency_hz(activity, params, rng):
+    """Activity-aware residual micro-displacement frequency.
+
+    The main Doppler comes from the Boulic-style segment kinematics.  These
+    small residual oscillations follow the radar-deconv pedestrian-scatterer
+    style and add sub-scatterer diversity without replacing the body model.
+    """
+    if activity == "run":
+        base = params.get("gait_freq", 2.5)
+        # Keep the classroom run class inside the P02 slow-time Doppler
+        # Nyquist region.  Full sprint limb tips at 77 GHz with 10 kHz PRF can
+        # alias, which is a useful advanced lesson but not the default HAR set.
+        return float(rng.uniform(1.5, 2.5) * base)
+    if activity == "walk":
+        base = params.get("gait_freq", 1.0)
+        return float(rng.uniform(6.0, 10.0) * base)
+    if activity == "wave":
+        base = params.get("wave_freq", 2.5)
+        return float(rng.uniform(1.5, 3.0) * base)
+    if activity == "fall":
+        base = 1.0 / max(float(params.get("t_collapse", 0.5)), 1e-3)
+        return float(rng.uniform(1.0, 3.0) * base)
+    if activity == "sit_down":
+        base = 1.0 / max(float(params.get("duration", 1.5)), 1e-3)
+        return float(rng.uniform(2.0, 5.0) * base)
+    if activity == "idle":
+        return float(rng.uniform(0.4, 1.5))
+    return float(rng.uniform(4.0, 12.0))
+
+
+def _segment_scatter_templates(segment_name, rng):
+    """Return P02 scatter templates for one body segment.
+
+    The template shapes intentionally follow the radar-deconv pedestrian model:
+    torso/head are stable scatterers; limbs are several lower-weight scatterers
+    with small residual micro-displacements.
+    """
+    kind = _segment_scatter_kind(segment_name)
+    length = float(BODY_SEGMENTS[segment_name]["length"])
+
+    if kind == "torso":
+        # radar-deconv pedestrian torso: 2--3 high-weight, no micro motion.
+        n = int(rng.integers(2, 4))
+        return [
+            {
+                "offset": float(rng.normal(0.0, 0.08)),
+                "weight": float(rng.uniform(0.6, 1.0)),
+                "micro_amp": 0.0,
+                "phase": float(rng.uniform(0.0, 2.0 * np.pi)),
+            }
+            for _ in range(n)
+        ]
+
+    if kind == "head":
+        return [
+            {
+                "offset": float(rng.normal(0.0, 0.04)),
+                "weight": 1.0,
+                "micro_amp": 0.0,
+                "phase": float(rng.uniform(0.0, 2.0 * np.pi)),
+            }
+        ]
+
+    # radar-deconv pedestrian limbs: several weaker scatterers across the
+    # pedestrian extent with small micro-displacement terms.
+    n = 2
+    return [
+        {
+            "offset": float(rng.uniform(-0.45 * length, 0.45 * length)),
+            "weight": float(rng.uniform(0.12, 0.40)),
+            "micro_amp": float(rng.uniform(0.004, 0.010)),
+            "phase": float(rng.uniform(0.0, 2.0 * np.pi)),
+        }
+        for _ in range(n)
+    ]
+
+
+def build_p02_pedestrian_scatterers(
+    activity, params, positions, range_m, cos_aspect, t, rng
+):
+    """Expand body segments into P02-only radar-deconv-inspired scatterers."""
+    scatterers = []
+    dt = float(t[1] - t[0]) if len(t) > 1 else 1.0
+
+    for segment_name, segment_info in BODY_SEGMENTS.items():
+        templates = _segment_scatter_templates(segment_name, rng)
+        template_weights = np.asarray(
+            [tpl["weight"] for tpl in templates], dtype=np.float64
+        )
+        template_weights = np.maximum(template_weights, 1e-6)
+        template_weights /= float(template_weights.sum())
+        base_rcs = float(segment_info["rcs"])
+        base_radial = (
+            np.asarray(positions[segment_name][0], dtype=np.float64) * cos_aspect
+        )
+        kind = _segment_scatter_kind(segment_name)
+
+        for idx, tpl in enumerate(templates):
+            micro_amp = float(tpl["micro_amp"])
+            micro_freq = 0.0
+            micro_phase = float(tpl["phase"])
+            if micro_amp > 0.0:
+                micro_freq = _activity_micro_frequency_hz(activity, params, rng)
+            micro_disp = (
+                micro_amp * np.sin(2.0 * np.pi * micro_freq * t + micro_phase)
+                if micro_amp > 0.0 and micro_freq > 0.0
+                else 0.0
+            )
+            # Template offsets and residual micro-displacements are along the
+            # walking/radial kinematic axis in this 2-D teaching model, so they
+            # should follow the same aspect projection as the segment motion.
+            scatter_range = (
+                range_m
+                + base_radial
+                + (float(tpl["offset"]) + micro_disp) * cos_aspect
+            )
+            if len(t) > 1:
+                radial_velocity = np.gradient(scatter_range, dt).astype(np.float64)
+            else:
+                radial_velocity = np.zeros_like(scatter_range, dtype=np.float64)
+
+            scatterers.append(
+                P02PedestrianScatterer(
+                    name=f"{segment_name}_{idx}",
+                    parent_segment=segment_name,
+                    scatter_kind=kind,
+                    range_m=np.asarray(scatter_range, dtype=np.float64),
+                    radial_velocity_mps=radial_velocity,
+                    rcs_m2=float(base_rcs * template_weights[idx]),
+                    amplitude_weight=float(template_weights[idx]),
+                    range_offset_m=float(tpl["offset"]),
+                    initial_phase_rad=float(rng.uniform(0.0, 2.0 * np.pi)),
+                    micro_disp_amp_m=micro_amp,
+                    micro_freq_hz=float(micro_freq),
+                    micro_phase_rad=micro_phase,
+                )
+            )
+
+    return scatterers
+
+
 # ─── Signal Generation ────────────────────────────────────────────────────────
 
-def generate_micro_doppler_signal(activity, params, fc=77e9, prf=10000,
+def generate_micro_doppler_signal(activity, params, fc=9.6e9, prf=10000,
                                    duration=3.0, snr_db=15.0, rng=None,
-                                   aspect_angle=0.0):
+                                   aspect_angle=0.0, radar=None,
+                                   range_m=10.0):
     """Generate CW micro-Doppler baseband signal.
 
     Parameters
@@ -274,6 +458,11 @@ def generate_micro_doppler_signal(activity, params, fc=77e9, prf=10000,
     snr_db : float
     rng : np.random.Generator
     aspect_angle : float — angle between radar LOS and walking direction [deg]
+    radar : FMCWRadar or None
+        공통 레이다 physics core. None이면 fc 기준 기본 FMCWRadar를 생성한다.
+    range_m : float
+        인체 중심 기준 거리 [m]. 세그먼트별 미세 radial displacement는 이 값에
+        더해져 radar equation의 R^-4 amplitude에 반영된다.
 
     Returns
     -------
@@ -282,7 +471,18 @@ def generate_micro_doppler_signal(activity, params, fc=77e9, prf=10000,
     if rng is None:
         rng = np.random.default_rng()
 
-    lam = C / fc
+    if radar is None:
+        radar = FMCWRadar(
+            fc=fc,
+            bw=50e6,
+            T_chirp=2e-6,
+            PRI=100e-6,
+            N_chirps=64,
+            fs=200e6,
+            N_rx=1,
+        )
+
+    lam = radar.lam
     N = int(prf * duration)
     t = np.arange(N) / prf
 
@@ -295,16 +495,20 @@ def generate_micro_doppler_signal(activity, params, fc=77e9, prf=10000,
     for seg_name, seg_info in BODY_SEGMENTS.items():
         x_k = positions[seg_name][0] * cos_aspect  # radial direction
         phase = -4 * np.pi / lam * x_k
-        signal += seg_info['rcs'] * np.exp(1j * phase)
+        seg_range = np.maximum(range_m + x_k, radar.range_res)
+        sigma = max(float(seg_info['rcs']), 1e-12)
+        p_rx = (
+            radar.tx_power_w
+            * radar.tx_gain_linear
+            * radar.rx_gain_linear
+            * radar.lam ** 2
+            * sigma
+            / (((4.0 * np.pi) ** 3) * seg_range ** 4 * radar.system_loss_linear)
+        )
+        amp = np.sqrt(p_rx)
+        signal += amp * np.exp(1j * phase)
 
-    # Noise
-    sig_power = np.mean(np.abs(signal) ** 2)
-    noise_power = sig_power / (10 ** (snr_db / 10))
-    noise = np.sqrt(noise_power / 2) * (
-        rng.standard_normal(N) + 1j * rng.standard_normal(N))
-    signal += noise
-
-    return signal
+    return add_complex_awgn(signal, snr_db=snr_db, rng=rng)
 
 
 def signal_to_spectrogram(signal, prf, n_fft=256, hop=64, output_size=(128, 128)):
@@ -355,12 +559,15 @@ def _random_activity_params(activity, rng):
         }
     elif activity == 'run':
         return {
-            'gait_freq': rng.uniform(2.0, 3.0),
-            'bulk_vel': rng.uniform(2.0, 4.5),
-            'hip_amp': rng.uniform(35, 50),
-            'knee_amp': rng.uniform(50, 70),
-            'shoulder_amp': rng.uniform(25, 40),
-            'elbow_amp': rng.uniform(40, 60),
+            # Controlled teaching run: visually distinct from walking but
+            # bounded to avoid Doppler aliasing for the default 77 GHz / 10 kHz
+            # slow-time PRF configuration.
+            'gait_freq': rng.uniform(1.5, 2.05),
+            'bulk_vel': rng.uniform(1.8, 3.1),
+            'hip_amp': rng.uniform(25, 36),
+            'knee_amp': rng.uniform(35, 50),
+            'shoulder_amp': rng.uniform(20, 32),
+            'elbow_amp': rng.uniform(30, 46),
             'direction': rng.choice([-1.0, 1.0]),
             'phase_offset': rng.uniform(0, 2 * np.pi),
         }
@@ -388,15 +595,214 @@ def _random_activity_params(activity, rng):
     return {}
 
 
-def generate_har_sample(activity, rng, fc=77e9, prf=10000, duration=3.0,
+def generate_range_compressed_micro_doppler_frame(
+    activity,
+    params,
+    fc=9.6e9,
+    prf=10000,
+    duration=3.0,
+    snr_db=15.0,
+    rng=None,
+    aspect_angle=0.0,
+    radar=None,
+    range_m=10.0,
+    range_window_bins=9,
+):
+    """Generate a local range-compressed frame for micro-Doppler extraction.
+
+    P02 builds a slow-time range-compressed frame around the human target range,
+    then extracts the complex slow-time signal at the simulator-known target
+    range bin and computes Doppler/STFT from that selected range.
+
+    The frame is local around the target range instead of a full hundreds-bin
+    cube so dataset generation stays tractable.  Each local bin is a physically
+    meaningful range bin from the shared radar configuration.
+
+    Returns
+    -------
+    frame : ndarray (N_chirps, N_local_range) complex
+        Local range-compressed frame.
+    meta : dict
+        Includes global/local range-bin indices and simulator metadata.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    if radar is None:
+        radar = FMCWRadar(
+            fc=fc,
+            bw=50e6,
+            T_chirp=2e-6,
+            PRI=1.0 / prf,
+            N_chirps=64,
+            fs=200e6,
+            N_rx=1,
+        )
+    else:
+        fc = radar.fc
+        radar_prf = 1.0 / radar.PRI
+        if not np.isclose(prf, radar_prf, rtol=1e-6, atol=1e-9):
+            prf = radar_prf
+
+    n_slow = int(prf * duration)
+    t = np.arange(n_slow, dtype=np.float64) / prf
+    angles = _ACTIVITY_FN[activity](t, params)
+    positions = _forward_kinematics(angles)
+
+    # Local range-bin window around the human target range.
+    full_range_axis = range_axis(radar).astype(np.float64)
+    target_bin = int(
+        np.clip(round(range_m / radar.range_bin_spacing), 0, radar.N_range_bins - 1)
+    )
+    half = max(0, int(range_window_bins) // 2)
+    start = max(0, target_bin - half)
+    stop = min(radar.N_range_bins, target_bin + half + 1)
+    range_bin_indices = np.arange(start, stop, dtype=np.int32)
+    local_range_axis = full_range_axis[range_bin_indices]
+
+    cos_aspect = float(np.cos(np.radians(aspect_angle)))
+    scatterers = build_p02_pedestrian_scatterers(
+        activity=activity,
+        params=params,
+        positions=positions,
+        range_m=float(range_m),
+        cos_aspect=cos_aspect,
+        t=t,
+        rng=rng,
+    )
+    scatter_kind_counts = {
+        kind: sum(1 for sc in scatterers if sc.scatter_kind == kind)
+        for kind in ("torso", "head", "limb")
+    }
+    max_abs_radial_velocity_mps = max(
+        (
+            float(np.max(np.abs(sc.radial_velocity_mps)))
+            for sc in scatterers
+            if sc.radial_velocity_mps.size
+        ),
+        default=0.0,
+    )
+    max_unambiguous_velocity_mps = radar_max_unambiguous_velocity_mps(radar, prf)
+
+    frame = np.zeros((n_slow, len(range_bin_indices)), dtype=np.complex128)
+    lam = radar.lam
+
+    for scatterer in scatterers:
+        seg_range = np.maximum(scatterer.range_m, radar.range_res)
+        sigma = max(float(scatterer.rcs_m2), 1e-12)
+
+        p_rx = (
+            radar.tx_power_w
+            * radar.tx_gain_linear
+            * radar.rx_gain_linear
+            * radar.lam**2
+            * sigma
+            / (((4.0 * np.pi) ** 3) * seg_range**4 * radar.system_loss_linear)
+        )
+        amp = np.sqrt(p_rx)
+        carrier_phase = np.exp(
+            -1j * 4.0 * np.pi * seg_range / lam
+            + 1j * scatterer.initial_phase_rad
+        )
+
+        # Range-compressed point-spread proxy.  The sinc kernel maps each
+        # scatterer's continuous range to the local bins; time variation of
+        # carrier phase over slow time creates the micro-Doppler signature.
+        range_response = np.sinc(
+            (local_range_axis[None, :] - seg_range[:, None]) / radar.range_bin_spacing
+        )
+        frame += (amp * carrier_phase)[:, None] * range_response
+
+    target_range_local = int(np.argmin(np.abs(range_bin_indices - target_bin)))
+    reference_power = float(np.mean(np.abs(frame[:, target_range_local]) ** 2))
+    frame = add_complex_awgn(
+        frame, snr_db=snr_db, rng=rng, reference_power=reference_power
+    )
+
+    return frame.astype(np.complex64), {
+        "simulator": "range_compressed_target_range_micro_doppler",
+        "radar_fc_hz": float(radar.fc),
+        "radar_bw_hz": float(radar.bw),
+        "radar_fs_hz": float(radar.fs),
+        "fs_over_bandwidth": float(radar.fs / radar.bw),
+        "slow_time_prf_hz": float(prf),
+        "slow_time_samples": int(n_slow),
+        "slow_time_duration_s": float(duration),
+        "max_abs_radial_velocity_mps": float(max_abs_radial_velocity_mps),
+        "radar_max_unambiguous_velocity_mps": float(max_unambiguous_velocity_mps),
+        "doppler_alias_safety_factor": float(P02_DOPPLER_ALIAS_SAFETY_FACTOR),
+        "doppler_alias_margin_mps": float(
+            P02_DOPPLER_ALIAS_SAFETY_FACTOR * max_unambiguous_velocity_mps
+            - max_abs_radial_velocity_mps
+        ),
+        "radar_config_n_chirps": int(radar.N_chirps),
+        "up_down_conversion": "excluded_baseband_only",
+        "range_processing": "local_range_compressed_frame",
+        "doppler_source": "stft_of_target_range_signal",
+        "scatter_model": "radar_deconv_inspired_pedestrian_scatterers",
+        "scatter_model_scope": "p02_only",
+        "n_scatterers": int(len(scatterers)),
+        "scatter_kind_counts": scatter_kind_counts,
+        "scatter_parent_segments": sorted({sc.parent_segment for sc in scatterers}),
+        "target_range_bin": int(target_bin),
+        "target_range_m": float(full_range_axis[target_bin]),
+        "range_bin_indices": range_bin_indices,
+        "range_axis_m": local_range_axis.astype(np.float32),
+        "target_range_local_index": int(target_range_local),
+        "range_window_bins": int(len(range_bin_indices)),
+        "scatterer_summary": [
+            {
+                "name": sc.name,
+                "parent_segment": sc.parent_segment,
+                "scatter_kind": sc.scatter_kind,
+                "rcs_m2": float(sc.rcs_m2),
+                "amplitude_weight": float(sc.amplitude_weight),
+                "range_offset_m": float(sc.range_offset_m),
+                "micro_disp_amp_m": float(sc.micro_disp_amp_m),
+                "micro_freq_hz": float(sc.micro_freq_hz),
+                "mean_radial_velocity_mps": float(np.mean(sc.radial_velocity_mps)),
+                "max_abs_radial_velocity_mps": float(
+                    np.max(np.abs(sc.radial_velocity_mps))
+                ),
+            }
+            for sc in scatterers
+        ],
+    }
+
+
+def generate_fmcw_micro_doppler_frame(*args, **kwargs):
+    """Deprecated alias; P02 uses target-range extraction, not full FMCW dechirp."""
+    return generate_range_compressed_micro_doppler_frame(*args, **kwargs)
+
+
+def extract_target_range_signal(frame, meta, range_half_width=0):
+    """Extract the slow-time signal at the simulator-known target range bin."""
+    center = int(meta["target_range_local_index"])
+    lo = max(0, center - int(range_half_width))
+    hi = min(frame.shape[1], center + int(range_half_width) + 1)
+    selected = frame[:, lo:hi]
+    if selected.shape[1] == 1:
+        return selected[:, 0]
+    weights = np.hanning(selected.shape[1] + 2)[1:-1]
+    weights = weights / (weights.sum() + 1e-12)
+    return selected @ weights
+
+
+def generate_har_sample(activity, rng, fc=9.6e9, prf=10000, duration=3.0,
                          snr_db=15.0, output_size=(128, 128),
-                         aspect_angle=None):
+                         aspect_angle=None, range_m=10.0, radar=None,
+                         return_debug=False):
     """End-to-end: activity → spectrogram + label.
 
     Parameters
     ----------
     aspect_angle : float or None — radar-to-motion aspect angle [deg].
         If None, defaults to 0.0 (backward compatible).
+    radar : FMCWRadar or None
+        Shared radar configuration. The sample is generated as a local
+        range-compressed frame, then the complex slow-time signal at the target
+        range bin is extracted before STFT. This avoids the earlier range-free
+        shortcut.
 
     Returns
     -------
@@ -408,16 +814,42 @@ def generate_har_sample(activity, rng, fc=77e9, prf=10000, duration=3.0,
         aspect_angle = 0.0
 
     params = _random_activity_params(activity, rng)
-    signal = generate_micro_doppler_signal(
-        activity, params, fc=fc, prf=prf,
-        duration=duration, snr_db=snr_db, rng=rng,
-        aspect_angle=aspect_angle)
-    spec = signal_to_spectrogram(signal, prf, output_size=output_size)
+    frame, frame_meta = generate_range_compressed_micro_doppler_frame(
+        activity,
+        params,
+        fc=fc,
+        prf=prf,
+        duration=duration,
+        snr_db=snr_db,
+        rng=rng,
+        aspect_angle=aspect_angle,
+        radar=radar,
+        range_m=range_m,
+        range_window_bins=9 if return_debug else 1,
+    )
+    signal = extract_target_range_signal(frame, frame_meta, range_half_width=0)
+    spec = signal_to_spectrogram(
+        signal, frame_meta['slow_time_prf_hz'], output_size=output_size
+    )
 
-    return spec, ACTIVITY_TO_IDX[activity], {
+    meta = {
         'activity': activity, 'snr_db': snr_db,
         'aspect_angle': aspect_angle,
+        'range_m': range_m,
+        'target_range_bin': frame_meta['target_range_bin'],
+        'target_range_m': frame_meta['target_range_m'],
     }
+    meta.update({
+        k: v for k, v in frame_meta.items()
+        if k not in {'range_bin_indices', 'range_axis_m', 'scatterer_summary'}
+    })
+    if return_debug:
+        meta['range_frame'] = frame
+        meta['range_axis_m'] = frame_meta['range_axis_m']
+        meta['target_range_signal'] = signal.astype(np.complex64)
+        meta['range_bin_indices'] = frame_meta['range_bin_indices']
+        meta['scatterer_summary'] = frame_meta['scatterer_summary']
+    return spec, ACTIVITY_TO_IDX[activity], meta
 
 
 # ─── Handcrafted Features (SVM baseline) ─────────────────────────────────────
@@ -461,7 +893,25 @@ def extract_handcrafted_features(spectrogram, n_svd=5):
     features.extend([time_bw.mean(), time_bw.std()])
 
     # 6-10. SVD singular values
-    U, S, Vh = np.linalg.svd(spec, full_matrices=False)
+    #
+    # Full 128x128 SVD dominated P02 data generation on shared CPUs.  The SVD
+    # terms are only coarse morphology descriptors for the classical baseline,
+    # so compute them on a 32x32 averaged image.  This keeps the feature family
+    # from the earlier lecture material while making generation practical.
+    svd_spec = spec
+    max_svd_size = 32
+    if H > max_svd_size or W > max_svd_size:
+        if H % max_svd_size == 0 and W % max_svd_size == 0:
+            fh = H // max_svd_size
+            fw = W // max_svd_size
+            svd_spec = spec.reshape(max_svd_size, fh, max_svd_size, fw).mean(axis=(1, 3))
+        else:
+            svd_spec = zoom(
+                spec,
+                (max_svd_size / H, max_svd_size / W),
+                order=1,
+            )
+    _, S, _ = np.linalg.svd(svd_spec, full_matrices=False)
     features.extend(S[:n_svd].tolist())
 
     # 11. SVD concentration

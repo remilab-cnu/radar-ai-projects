@@ -1,7 +1,7 @@
 """SAR 시뮬레이터 — 교육용
 
 Stripmap SAR 시뮬레이션: 점 표적 기반 영상 형성, 위상 오차 주입/보정, PGA.
-P4 (SAR Autofocus) 및 P5 (SAR-ATR) 공유 모듈.
+P4 SAR despeckling/autofocus support module.
 
 사용법:
     from shared.sar_simulator import StripmapSAR, generate_sar_image, defocus_image
@@ -242,7 +242,7 @@ def add_speckle(image, n_looks=1, rng=None):
     return image * speckle
 
 
-# ─── Target Scatterer Models (P5: SAR-ATR) ───────────────────────────────────
+# ─── Target Scatterer Models ─────────────────────────────────────────────────
 
 TARGET_CLASSES = ['sedan', 'truck', 'tank', 'apc',
                   'building', 'tower', 'fence', 'background']

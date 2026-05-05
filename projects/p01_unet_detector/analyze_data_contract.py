@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate P01 schema-v2 data and create label/axis sanity artifacts."""
+"""Validate current P01 data schema and create label/axis sanity artifacts."""
 from __future__ import annotations
 
 import argparse
@@ -13,13 +13,13 @@ import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 
-from eval_utils import assert_schema_v2, split_path
+from eval_utils import assert_schema_current, split_path
 
 
 def analyze(path: Path, out_dir: Path, max_examples: int = 4) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     with h5py.File(path, "r") as f:
-        assert_schema_v2(f)
+        assert_schema_current(f)
         n = len(f["x"])
         y = f["y"][:, 0]
         pos = y.reshape(n, -1).sum(axis=1)

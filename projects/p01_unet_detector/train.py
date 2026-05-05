@@ -19,6 +19,7 @@ import json
 import sys
 from pathlib import Path
 
+import h5py
 import numpy as np
 import torch
 import torch.nn as nn
@@ -32,6 +33,20 @@ from common.seed import seed_everything
 from common.train_utils import training_loop, count_parameters
 from model import UNetDetector, FocalDiceLoss
 
+EXPECTED_SCHEMA_VERSION = 9
+
+
+def assert_current_schema(path: Path) -> None:
+    with h5py.File(path, "r") as f:
+        version = int(f["schema_version"][0]) if "schema_version" in f else -1
+        required = ["mti_mode", "mti_applied", "target_peak_snr_db", "radar_fs_hz"]
+        missing = [key for key in required if key not in f]
+    if version != EXPECTED_SCHEMA_VERSION or missing:
+        raise ValueError(
+            f"{path} is stale or incompatible (schema_version={version}, "
+            f"missing={missing}); regenerate P01 data before training/eval."
+        )
+
 
 # ---------------------------------------------------------------------------
 # Dataset wrapper: HDF5 stores y as (1, Nc, Nr); return (rdm, mask) tensors
@@ -40,9 +55,19 @@ from model import UNetDetector, FocalDiceLoss
 class DetectionDataset(HDF5Dataset):
     """Thin wrapper: x=(2,Nc,Nr) float32, y=(1,Nc,Nr) float32."""
 
-    def __init__(self, path):
+    def __init__(self, path, input_mode="mag_phase"):
         super().__init__(path, x_key="x", y_key="y",
                          x_dtype=torch.float32, y_dtype=torch.float32)
+        if input_mode not in {"mag_phase", "mag_only"}:
+            raise ValueError(f"unknown input_mode={input_mode!r}")
+        self.input_mode = input_mode
+
+    def __getitem__(self, idx):
+        x, y = super().__getitem__(idx)
+        if self.input_mode == "mag_only":
+            x = x.clone()
+            x[1].zero_()
+        return x, y
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +110,9 @@ def main():
     p.add_argument("--n_val",    type=int, default=5000)
     p.add_argument("--n_test",   type=int, default=5000)
     p.add_argument("--base_ch",  type=int, default=32)
+    p.add_argument("--input_mode", choices=["mag_phase", "mag_only"], default="mag_phase")
     p.add_argument("--data_dir", type=str, default=None)
+    p.add_argument("--artifact_dir", type=str, default=None)
     args = p.parse_args()
 
     if args.smoke:
@@ -99,7 +126,7 @@ def main():
 
     root = Path(__file__).parent
     data_dir = Path(args.data_dir) if args.data_dir else root / "data"
-    ckpt_dir = root / "artifacts"
+    ckpt_dir = Path(args.artifact_dir) if args.artifact_dir else root / "artifacts"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Data generation ---
@@ -126,16 +153,17 @@ def main():
         if not p_check.exists():
             print(f"ERROR: {p_check} not found. Use --generate flag.")
             return
+        assert_current_schema(p_check)
 
-    train_ds = DetectionDataset(train_path)
-    val_ds   = DetectionDataset(val_path)
-    test_ds  = DetectionDataset(test_path)
+    train_ds = DetectionDataset(train_path, input_mode=args.input_mode)
+    val_ds   = DetectionDataset(val_path, input_mode=args.input_mode)
+    test_ds  = DetectionDataset(test_path, input_mode=args.input_mode)
     print(f"  Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
 
     # --- Model ---
-    device = "cpu"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     model = UNetDetector(in_channels=2, base_ch=args.base_ch).to(device)
-    print(f"  Model: UNetDetector (base_ch={args.base_ch})")
+    print(f"  Model: UNetDetector (base_ch={args.base_ch}, input_mode={args.input_mode})")
     print(f"  Parameters: {count_parameters(model):,}")
 
     # --- Load checkpoint ---
@@ -146,6 +174,8 @@ def main():
     # --- Eval only ---
     if args.eval_only:
         results = evaluate(model, test_ds, device)
+        results["input_mode"] = args.input_mode
+        results["base_ch"] = args.base_ch
         print("\n=== Test Evaluation ===")
         for k, v in results.items():
             print(f"  {k}: {v:.4f}")
@@ -174,6 +204,8 @@ def main():
     if best_ckpt.exists():
         model.load_state_dict(torch.load(best_ckpt, map_location=device))
     results = evaluate(model, test_ds, device)
+    results["input_mode"] = args.input_mode
+    results["base_ch"] = args.base_ch
     print(f"  Pd={results['Pd']:.4f}  Pfa={results['Pfa']:.2e}  "
           f"Prec={results['Precision']:.4f}  F1={results['F1']:.4f}")
     with open(ckpt_dir / "eval_results.json", "w") as f:

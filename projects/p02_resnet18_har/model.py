@@ -110,6 +110,61 @@ class ResNetHAR(nn.Module):
         return self.model(x)
 
 
+class TinyCNNHAR(nn.Module):
+    """Compact CNN baseline for micro-Doppler spectrograms.
+
+    This is intentionally much smaller than ResNet-18.  It gives the lecture a
+    neural comparison point between handcrafted features and a deep residual
+    model without making every result depend on an 11M-parameter network.
+    """
+
+    def __init__(self, n_classes=6, width=24, dropout=0.25):
+        super().__init__()
+
+        def block(in_ch, out_ch):
+            return nn.Sequential(
+                nn.Conv2d(in_ch, out_ch, 3, padding=1, bias=False),
+                nn.BatchNorm2d(out_ch),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(out_ch, out_ch, 3, padding=1, bias=False),
+                nn.BatchNorm2d(out_ch),
+                nn.ReLU(inplace=True),
+                nn.MaxPool2d(2),
+            )
+
+        self.features = nn.Sequential(
+            block(1, width),
+            block(width, width * 2),
+            block(width * 2, width * 4),
+            block(width * 4, width * 4),
+        )
+        self.classifier = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Dropout(dropout),
+            nn.Linear(width * 4, n_classes),
+        )
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        return self.classifier(self.features(x))
+
+
+def make_har_model(model_name="resnet18", n_classes=6):
+    """Factory used by train/eval scripts."""
+    if model_name == "resnet18":
+        return ResNetHAR(n_classes=n_classes)
+    if model_name == "tiny_cnn":
+        return TinyCNNHAR(n_classes=n_classes)
+    raise ValueError(f"unknown HAR model {model_name!r}")
+
+
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 

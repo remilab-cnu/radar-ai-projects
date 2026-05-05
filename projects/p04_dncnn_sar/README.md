@@ -1,65 +1,106 @@
-# P04: DnCNN-SAR Despeckling
+# P04: DnCNN-SAR Despeckling on Real Sentinel-1
 
-SAR image despeckling using DnCNN residual learning in the dB-magnitude domain.
+Runnable P04 implementation for Week 13 SAR despeckling.  The code trains a
+DnCNN-style residual CNN on real Sentinel-1 GRD/SLC patches in normalized log/dB
+magnitude and compares it with classical filters.
 
-## Source boundary
+## Student-facing result summary
 
-This folder is the runnable P04 companion implementation. The P04 lecture and
-assignment narrative is canonical in the sibling `grad-radar-ai` Week 13 SAR
-Despeckling material. Keep changes here aligned with that lecture contract; do
-not change the P04 learning objective from this repository first.
+For students, show the distilled result rather than every diagnostic case.
 
-## Task
+| Method | PSNR mean | SSIM mean | Student takeaway |
+|---|---:|---:|---|
+| Median filter | 26.34 dB | 0.621 | strongest simple classical PSNR baseline |
+| **DnCNN-SAR** | **31.10 dB** | **0.794** | about **+4.76 dB** over Median on the full test split |
 
-Given a speckle-corrupted SAR dB-magnitude image, predict the clean image.
-Evaluated against classical Lee, Frost, and Median filters.
+Add one sentence for source context:
 
-## Architecture
+> The practically important SLC subset is **31.00 dB / SSIM 0.792**; GRD reaches
+> higher scores because it is already prefiltered and is a small minority case.
 
-- **Model**: DnCNN-SAR -- 17-layer residual CNN (predict noise, subtract from input)
-- **Input**: `(B, 1, 256, 256)` -- dB-magnitude SAR patch normalized to [0, 1]
-- **Output**: `(B, 1, 256, 256)` -- despeckled dB-magnitude image
-- **Loss**: DespecklingLoss (Charbonnier w=0.8 + SSIM w=0.2)
-- **Parameters**: ~556K
+Recommended qualitative figures for a lecture/handout:
+
+1. `slc_median_idx1794_slc.png` — representative SLC result.
+2. `baseline_wins_idx1622_slc.png` or `slc_worst_idx1016_slc.png` — failure case
+   showing why worst cases matter.
+3. `grd_easy_idx1589_grd.png` — optional contrast case, clearly labeled as easier
+   prefiltered GRD.
+
+Use `dncnn_raw` for headline metrics.  Treat `dncnn_clipped` as a separate
+post-processing/display diagnostic.
+
+## Data contract
+
+The generator expects Sentinel-1 products under `projects/p04_dncnn_sar/raw_sentinel1/`
+by default.  Override with `P04_SAR_DATA_ROOT` or `--data_root` when the data is
+mounted elsewhere.
+`generate_data.py` writes:
+
+| Split | File | Contents |
+|---|---|---|
+| Train | `data/real_despeckling_train.h5` | training patches |
+| Val | `data/real_despeckling_val.h5` | validation patches |
+| Test | `data/real_despeckling_test.h5` | test patches |
+
+Each HDF5 file contains `noisy`, `clean`, and `source` arrays plus attrs for data
+kind, smoothing method, look size, and source paths.  The default SLC target is
+intensity-domain multi-look smoothing (`smooth_method=multilook`, `look_size=4`):
+it is pseudo-clean, not true clean SAR ground truth.
+
+## Model and metrics
+
+- Model: 17-layer DnCNN-SAR, 64 filters, about 556K parameters
+- Input/output: `(B, 1, 256, 256)` normalized log/dB patches
+- Loss: Charbonnier (`w=0.8`) + SSIM (`w=0.2`)
+- Metrics: PSNR, SSIM, `enl_log_roi_proxy`, EPI
+
+Metric caveats for instructors:
+
+- `enl_log_roi_proxy` is a smoothness proxy on normalized log/dB images, not
+  physical linear-intensity ENL.
+- EPI can be high variance on real SLC scenes; prefer robust summaries and case
+  images over absolute-value claims.
+- Classical baselines are run in the same normalized log/dB domain as DnCNN for
+  same-input-contract comparison.
 
 ## Commands
 
 ```bash
-# Generate data + train (default: 25K train, 30 epochs)
-python train.py --generate --epochs 30
+# Generate data and train the full lecture-scale checkpoint.
+python train.py --generate --epochs 100 --batch_size 32 --lr 5e-4 --no_amp
 
-# Smoke test (small 64x64 images, 2 epochs, CPU)
+# Fast local smoke check.
 python train.py --generate --smoke
 
-# Eval only
+# Evaluation only with the default capped first-N setting.
 python train.py --eval_only --checkpoint artifacts/best_model.pt
 
-# Custom sizes
-python train.py --generate --n_train 5000 --epochs 60 --batch_size 8
+# Full diagnostic evaluation: all test patches + per-sample CSV.
+python train.py --eval_only --checkpoint artifacts/best_model.pt \
+  --eval_samples 0 --ckpt_dir artifacts/diagnostics_full
+
+# Deterministic qualitative cases from the diagnostic CSV.
+python make_case_studies.py \
+  --artifact_dir artifacts/diagnostics_full \
+  --checkpoint artifacts/best_model.pt \
+  --out_dir artifacts/diagnostics_full/case_studies
 ```
 
-## Data
+`--eval_samples 0` means full test-set evaluation.  Positive values keep a
+faster capped first-N evaluation.
 
-Generated via `generate_data.py` using `shared/sar_simulator.py`.
-Simulated stripmap SAR scenes with random point targets, 1-5 looks speckle.
-Full/default datasets use 256×256 images. Smoke mode intentionally uses a
-smaller 64×64 image and fewer samples so the end-to-end check finishes quickly
-on CPU.
+## Diagnostic artifacts
 
-| Split | Filename | Default size |
-|-------|----------|-------------|
-| Train | `data/despeckling_train.h5` | 25K |
-| Val | `data/despeckling_val.h5` | 5K |
-| Test | `data/despeckling_test.h5` | 5K |
+| Artifact | Purpose |
+|---|---|
+| `artifacts/diagnostics_full/eval_results.json` | aggregate metrics, robust percentiles, and source breakdown |
+| `artifacts/diagnostics_full/per_sample_metrics.csv` | per-sample metrics for reproducible case selection |
+| `artifacts/diagnostics_full/case_studies/case_manifest.json` | case-study sample indices, metrics, and caveats |
+| `artifacts/diagnostics_full/case_studies/*.png` | qualitative panels for lecture/handout drafting |
 
-HDF5 schema: `noisy (N,1,256,256)`, `clean (N,1,256,256)`, `n_looks (N,)`, `n_targets (N,)`
+## Boundaries
 
-## Metrics
-
-| Metric | Description |
-|--------|-------------|
-| dncnn_psnr | Peak Signal-to-Noise Ratio (dB, higher is better) |
-| dncnn_ssim | Structural Similarity Index (higher is better) |
-| lee/frost/median_psnr | Classical filter baselines |
-
-Results saved to `artifacts/eval_results.json`.
+- Use real Sentinel-1 GRD/SLC data for Week 13 claims.
+- Do not present smoke-test outputs as full experiment results.
+- For new claims, regenerate or read the JSON/CSV artifacts instead of copying
+  numbers by hand.

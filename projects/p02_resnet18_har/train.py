@@ -19,6 +19,7 @@ import json
 import sys
 from pathlib import Path
 
+import h5py
 import numpy as np
 import torch
 import torch.nn as nn
@@ -30,13 +31,33 @@ from common.cli import base_parser
 from common.hdf5_io import load_hdf5
 from common.seed import seed_everything
 from common.train_utils import training_loop, count_parameters
-from model import ResNetHAR
+from model import make_har_model
 
 try:
     from shared.micro_doppler import ACTIVITY_LABELS, N_CLASSES
 except ImportError:
     ACTIVITY_LABELS = [f"class_{i}" for i in range(6)]
     N_CLASSES = 6
+
+EXPECTED_SCHEMA_VERSION = 6
+DEFAULT_ASPECT_ANGLE_RANGE_DEG = (0.0, 60.0)
+
+
+def assert_current_schema(path: Path) -> None:
+    with h5py.File(path, "r") as f:
+        version = int(f["schema_version"][0]) if "schema_version" in f else -1
+        required = [
+            "aspect_angle_deg", "aspect_angle_range_deg", "slow_time_prf_hz",
+            "slow_time_samples", "scatter_model", "range_processing", "doppler_source",
+            "max_abs_radial_velocity_mps", "radar_max_unambiguous_velocity_mps",
+            "doppler_alias_margin_mps", "aspect_convention",
+        ]
+        missing = [key for key in required if key not in f]
+    if version != EXPECTED_SCHEMA_VERSION or missing:
+        raise ValueError(
+            f"{path} is stale or incompatible (schema_version={version}, "
+            f"missing={missing}); regenerate P02 data before training/eval."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -45,6 +66,7 @@ except ImportError:
 
 def load_har_dataset(path):
     """Return TensorDataset with (spec, label) tensors."""
+    assert_current_schema(Path(path))
     data = load_hdf5(path, ["x", "y"])
     x = torch.as_tensor(data["x"], dtype=torch.float32)   # (N, 1, H, W)
     y = torch.as_tensor(data["y"], dtype=torch.long)       # (N,)
@@ -76,13 +98,22 @@ def evaluate(model, dataset, device, max_samples=3000):
     labels = torch.cat(labels).numpy()[:n_eval]
 
     acc = float(np.mean(preds == labels))
+    confusion = np.zeros((N_CLASSES, N_CLASSES), dtype=np.int64)
+    for true, pred in zip(labels, preds):
+        if 0 <= true < N_CLASSES and 0 <= pred < N_CLASSES:
+            confusion[int(true), int(pred)] += 1
     per_class = {}
     for i, name in enumerate(ACTIVITY_LABELS):
         mask = labels == i
         if mask.sum() > 0:
             per_class[name] = float(np.mean(preds[mask] == labels[mask]))
 
-    return {"accuracy": acc, "per_class": per_class}
+    return {
+        "accuracy": acc,
+        "per_class": per_class,
+        "confusion_matrix": confusion.tolist(),
+        "class_names": list(ACTIVITY_LABELS),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +127,13 @@ def main():
     p.add_argument("--n_test",  type=int, default=3000)
     p.add_argument("--snr_lo",  type=float, default=5.0)
     p.add_argument("--snr_hi",  type=float, default=25.0)
+    p.add_argument("--aspect_lo", type=float, default=DEFAULT_ASPECT_ANGLE_RANGE_DEG[0])
+    p.add_argument("--aspect_hi", type=float, default=DEFAULT_ASPECT_ANGLE_RANGE_DEG[1])
+    p.add_argument("--range_lo", type=float, default=6.0)
+    p.add_argument("--range_hi", type=float, default=18.0)
+    p.add_argument("--model", choices=["resnet18", "tiny_cnn"], default="resnet18")
     p.add_argument("--data_dir", type=str, default=None)
+    p.add_argument("--artifact_dir", type=str, default=None)
     args = p.parse_args()
 
     if args.smoke:
@@ -110,7 +147,7 @@ def main():
 
     root = Path(__file__).parent
     data_dir = Path(args.data_dir) if args.data_dir else root / "data"
-    ckpt_dir = root / "artifacts"
+    ckpt_dir = Path(args.artifact_dir) if args.artifact_dir else root / "artifacts"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Data generation ---
@@ -123,6 +160,10 @@ def main():
             "--n_test",  str(args.n_test),
             "--snr_lo",  str(args.snr_lo),
             "--snr_hi",  str(args.snr_hi),
+            "--aspect_lo", str(args.aspect_lo),
+            "--aspect_hi", str(args.aspect_hi),
+            "--range_lo", str(args.range_lo),
+            "--range_hi", str(args.range_hi),
             "--out_dir", str(data_dir),
             "--seed",    str(args.seed),
         ]
@@ -147,8 +188,10 @@ def main():
     print(f"  Classes ({N_CLASSES}): {ACTIVITY_LABELS}")
 
     # --- Model ---
-    device = "cpu"
-    model = ResNetHAR(n_classes=N_CLASSES).to(device)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = make_har_model(args.model, n_classes=N_CLASSES).to(device)
+    print(f"  Device: {device}")
+    print(f"  Model: {args.model}")
     print(f"  Parameters: {count_parameters(model):,}")
 
     # --- Load checkpoint ---
@@ -159,6 +202,7 @@ def main():
     # --- Eval only ---
     if args.eval_only:
         results = evaluate(model, test_ds, device)
+        results["model"] = args.model
         print(f"\n=== Test Evaluation ===")
         print(f"  Overall accuracy: {results['accuracy']:.1%}")
         for cls, acc in results["per_class"].items():
@@ -188,6 +232,7 @@ def main():
     if best_ckpt.exists():
         model.load_state_dict(torch.load(best_ckpt, map_location=device))
     results = evaluate(model, test_ds, device)
+    results["model"] = args.model
     print(f"  Overall accuracy: {results['accuracy']:.1%}")
     for cls, acc in results["per_class"].items():
         print(f"    {cls:<14s}  {acc:.1%}")

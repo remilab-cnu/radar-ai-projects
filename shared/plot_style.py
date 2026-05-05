@@ -1,4 +1,4 @@
-"""Shared matplotlib style for grad-radar-ai course figures.
+"""Shared matplotlib style for radar AI course figures.
 
 Based on IEEE paper-figure-workflow preset, adapted for lecture web display.
 All gen_*.py scripts should call setup_style() before creating figures.

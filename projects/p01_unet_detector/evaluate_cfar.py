@@ -12,12 +12,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from eval_utils import (
     add_counts,
+    add_target_counts,
+    add_target_metrics,
     choose_by_max_f1,
     confusion_counts,
     iter_samples,
     load_policy,
     metrics_from_counts,
     split_path,
+    target_detection_counts,
 )
 from shared.fmcw_simulator import ca_cfar_2d
 
@@ -35,12 +38,22 @@ def run_policy(
     max_samples: int | None,
 ) -> dict:
     counts = {"tp": 0, "fp": 0, "fn": 0, "tn": 0}
+    target_counts = {"target_detected": 0, "target_total": 0}
     n = 0
     for sample in iter_samples(path, max_samples):
         det = ca_cfar_2d(sample["rdm_mag_linear"], guard=guard, train=train, pfa=pfa)
         add_counts(counts, confusion_counts(det, sample["gt"]))
+        add_target_counts(
+            target_counts,
+            target_detection_counts(
+                det,
+                sample["target_range_bin"],
+                sample["target_doppler_bin"],
+            ),
+        )
         n += 1
     metrics = metrics_from_counts(counts)
+    add_target_metrics(metrics, target_counts)
     metrics.update({
         "guard": list(guard),
         "train": list(train),
@@ -62,6 +75,8 @@ def main() -> None:
     ap.add_argument("--train", default="4,4")
     ap.add_argument("--pfa", type=float, default=1e-4)
     ap.add_argument("--max_samples", type=int, default=None)
+    ap.add_argument("--parallel", type=int, default=1,
+                    help="number of worker processes for sweep (1=sequential)")
     args = ap.parse_args()
 
     path = split_path(args.data_dir, args.split)
@@ -79,7 +94,16 @@ def main() -> None:
         trains = [parse_pair(args.train)]
         pfas = [args.pfa]
 
-    results = [run_policy(path, g, tr, pfa, args.max_samples) for g, tr, pfa in product(guards, trains, pfas)]
+    configs = list(product(guards, trains, pfas))
+    if args.parallel > 1 and len(configs) > 1:
+        from multiprocessing import Pool
+        with Pool(args.parallel) as pool:
+            results = pool.starmap(
+                run_policy,
+                [(path, g, tr, pfa, args.max_samples) for g, tr, pfa in configs],
+            )
+    else:
+        results = [run_policy(path, g, tr, pfa, args.max_samples) for g, tr, pfa in configs]
     selected = results[0] if args.policy_from or not args.sweep else choose_by_max_f1(results)
     payload = {
         "kind": "p01_cfar",

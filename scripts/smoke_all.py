@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run smoke tests for all projects to verify they work end-to-end.
+"""Run smoke tests for active projects to verify they work end-to-end.
 
 Usage:
     python scripts/smoke_all.py           # --generate --smoke (fast, default)
@@ -13,16 +13,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROJECTS_DIR = REPO_ROOT / "projects"
 
-EXPECTED_PROJECTS = [
+ACTIVE_PROJECTS = [
     "p01_unet_detector",
     "p02_resnet18_har",
-    "p03_deepmusic_cnn",
+    "p03_radar_cube_doa",
     "p04_dncnn_sar",
-    "p05_neural_cfar",
-    "p06_iq_imbalance",
-    "p07_full_duplex_sic",
-    "p08_jammer_nulling",
-    "p09_rd_superres",
 ]
 
 
@@ -35,16 +30,16 @@ def main():
     )
     args = parser.parse_args()
 
-    # Assert all 9 expected project directories exist before running.
-    missing = [p for p in EXPECTED_PROJECTS if not (PROJECTS_DIR / p).is_dir()]
+    # Assert all active project directories exist before running.
+    missing = [p for p in ACTIVE_PROJECTS if not (PROJECTS_DIR / p).is_dir()]
     if missing:
         print(f"ERROR: Missing project directories: {missing}", file=sys.stderr)
         sys.exit(1)
 
-    train_args = ["--generate", "--epochs", "2"] if args.full else ["--generate", "--smoke"]
+    default_train_args = ["--generate", "--epochs", "2"] if args.full else ["--generate", "--smoke"]
 
     results = {}
-    for name in EXPECTED_PROJECTS:
+    for name in ACTIVE_PROJECTS:
         proj = PROJECTS_DIR / name
         train_py = proj / "train.py"
         if not train_py.exists():
@@ -54,6 +49,20 @@ def main():
         print(f"\n{'='*60}")
         print(f"  Smoke test: {name}")
         print(f"{'='*60}")
+
+        train_args = list(default_train_args)
+        if name == "p03_radar_cube_doa":
+            train_args = (
+                ["--mapping", "--generate", "--epochs", "2"]
+                if args.full else
+                ["--mapping", "--generate", "--smoke"]
+            )
+        if name == "p04_dncnn_sar" and args.full:
+            # P04 is the real-Sentinel-1 lecture project. A non-smoke
+            # --generate run scans focused SLC products and is a full
+            # experiment setup, not a 300-second all-project smoke check.
+            train_args = ["--generate", "--smoke"]
+            print("  Note: using --smoke for P04 even under --full; full SLC experiments require instructor-provided data and a longer run.")
 
         ret = subprocess.run(
             [sys.executable, str(train_py)] + train_args,

@@ -14,6 +14,7 @@ SPLIT_FILES = {
     "val": "det_val.h5",
     "test": "det_test.h5",
 }
+EXPECTED_SCHEMA_VERSION = 9
 
 
 def split_path(data_dir: str | Path, split: str) -> Path:
@@ -39,6 +40,46 @@ def add_counts(a: dict[str, int], b: dict[str, int]) -> dict[str, int]:
     return a
 
 
+def target_detection_counts(
+    pred: np.ndarray,
+    target_range_bins: np.ndarray,
+    target_doppler_bins: np.ndarray,
+    tolerance: tuple[int, int] = (1, 1),
+) -> dict[str, int]:
+    """Count labelled targets detected within a small RD-bin tolerance.
+
+    Pixel F1 can punish harmless mask-shape differences around a Hann-windowed
+    mainlobe.  For P1 lectures we also report target-level recall: each labelled
+    target is counted once if any predicted positive falls close to its simulator
+    bin.
+    """
+    pred = np.asarray(pred, dtype=bool)
+    td, tr = (int(tolerance[0]), int(tolerance[1]))
+    detected = 0
+    total = 0
+    n_doppler, n_range = pred.shape
+    for r_bin, d_bin in zip(np.asarray(target_range_bins), np.asarray(target_doppler_bins)):
+        r = int(r_bin)
+        d = int(d_bin)
+        if r < 0 or d < 0:
+            continue
+        if not (0 <= r < n_range and 0 <= d < n_doppler):
+            continue
+        total += 1
+        d0 = max(0, d - td)
+        d1 = min(n_doppler, d + td + 1)
+        r0 = max(0, r - tr)
+        r1 = min(n_range, r + tr + 1)
+        detected += int(np.any(pred[d0:d1, r0:r1]))
+    return {"target_detected": int(detected), "target_total": int(total)}
+
+
+def add_target_counts(a: dict[str, int], b: dict[str, int]) -> dict[str, int]:
+    for key in ("target_detected", "target_total"):
+        a[key] = int(a.get(key, 0) + b.get(key, 0))
+    return a
+
+
 def metrics_from_counts(c: dict[str, int]) -> dict[str, float | int]:
     tp, fp, fn, tn = (int(c.get(k, 0)) for k in ("tp", "fp", "fn", "tn"))
     pd = tp / (tp + fn + 1e-10)
@@ -55,6 +96,17 @@ def metrics_from_counts(c: dict[str, int]) -> dict[str, float | int]:
         "Precision": float(precision),
         "F1": float(f1),
     }
+
+
+def add_target_metrics(metrics: dict, target_counts: dict[str, int]) -> dict:
+    detected = int(target_counts.get("target_detected", 0))
+    total = int(target_counts.get("target_total", 0))
+    metrics.update({
+        "target_detected": detected,
+        "target_total": total,
+        "target_recall": float(detected / (total + 1e-10)),
+    })
+    return metrics
 
 
 def choose_by_max_f1(results: list[dict]) -> dict:
@@ -81,21 +133,35 @@ def load_policy(path: str | Path) -> dict:
     raise ValueError(f"no selected policy in {path}")
 
 
-def assert_schema_v2(h5: h5py.File) -> None:
+def assert_schema_current(h5: h5py.File) -> None:
     required = [
         "x", "y", "rdm_mag_linear", "snr_db", "n_targets", "clutter_power_db",
+        "adc_clipped_fraction", "mti_applied", "mti_mode",
+        "target_peak_snr_db", "target_local_bg_floor", "target_effective_bg_floor",
+        "radar_fs_hz", "fs_over_bandwidth",
         "target_range_bin", "target_doppler_bin", "range_axis_m", "velocity_axis_mps",
     ]
     missing = [key for key in required if key not in h5]
     if missing:
         raise KeyError(
-            "P01 schema-v2 data required for verified baselines; missing " + ", ".join(missing)
+            f"P01 schema-v{EXPECTED_SCHEMA_VERSION} data required for verified baselines; missing "
+            + ", ".join(missing)
         )
+    version = int(h5["schema_version"][0]) if "schema_version" in h5 else -1
+    if version != EXPECTED_SCHEMA_VERSION:
+        raise ValueError(
+            f"P01 data schema_version={version}; expected {EXPECTED_SCHEMA_VERSION}. "
+            "Regenerate data with projects/p01_unet_detector/generate_data.py."
+        )
+
+
+# Compatibility name used by older evaluation scripts in this repo.
+assert_schema_v2 = assert_schema_current
 
 
 def iter_samples(path: str | Path, max_samples: int | None = None):
     with h5py.File(path, "r") as f:
-        assert_schema_v2(f)
+        assert_schema_current(f)
         n = len(f["x"])
         if max_samples is not None:
             n = min(n, int(max_samples))
@@ -108,4 +174,6 @@ def iter_samples(path: str | Path, max_samples: int | None = None):
                 "snr_db": float(f["snr_db"][i]),
                 "n_targets": int(f["n_targets"][i]),
                 "clutter_power_db": float(f["clutter_power_db"][i]),
+                "target_range_bin": f["target_range_bin"][i],
+                "target_doppler_bin": f["target_doppler_bin"][i],
             }

@@ -1,5 +1,7 @@
 # Data & checkpoints (generated, not versioned)
 **/data/*.h5
+projects/p02_resnet18_har/data_stress_*/
+projects/p02_resnet18_har/data_pre_schema*/
 **/artifacts/
 **/checkpoints/
 
@@ -35,3 +37,19 @@ Thumbs.db
 .omc/
 **/.omc/
 .omx/
+# Local agent/runtime notes and raw run logs
+.claude/
+docs/handover/
+docs/vessl-logs/
+
+# Internal planning notes not part of the student-facing release
+docs/technical/*_plan.md
+docs/technical/*design_review.md
+docs/p01-schema8-full-run-summary.md
+
+# Instructor/cloud execution configs with local mount paths
+**/vessl_*.yaml
+**/run_vessl_*.sh
+
+# Superseded run summaries kept out of the public release surface
+docs/p03-radar-cube-doa-full-run-summary.md
