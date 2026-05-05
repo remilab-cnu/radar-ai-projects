@@ -154,9 +154,6 @@ after projection to range `r`, it becomes a lateral map error of roughly
 | `model.py` | Residual 1D ConvNet from `(2, N_rx)` antenna vector to 181-bin DoA spectrum. |
 | `test_radar_cube_doa_contract.py` | Contract tests for the legacy unit lane and the new mapping/ego-motion lane. |
 
-Technical details live in:
-
-- `docs/technical/p03_fmcw_data_generation_contract.md`
 
 ## Commands
 

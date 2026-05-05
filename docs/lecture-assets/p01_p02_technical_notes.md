@@ -2,12 +2,6 @@
 
 기준 시점: 2026-05-05 KST
 
-생성 코드:
-
-```bash
-python3 scripts/make_p01_p02_lecture_assets.py
-```
-
 생성 위치: `docs/lecture-assets/`
 
 | 파일 | 핵심 용도 |
@@ -47,7 +41,7 @@ mask는 target 중심 cell과 상하좌우 이웃을 포함한 5-cell cross다.
 
 - `projects/p01_unet_detector/artifacts/full_eval/p01_cfar_selected_test.json`
 - `projects/p01_unet_detector/artifacts/full_eval/p01_unet_selected_test.json`
-- `docs/p01-schema9-balanced-full-run-summary.md`
+- `docs/p01-result-summary.md`
 
 1,000개 held-out test sample에서 validation-locked policy로 평가한 값:
 

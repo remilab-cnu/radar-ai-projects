@@ -1,7 +1,8 @@
-# Data & checkpoints (generated, not versioned)
+# Generated data and checkpoints
 **/data/*.h5
 projects/p02_resnet18_har/data_stress_*/
 projects/p02_resnet18_har/data_pre_schema*/
+projects/p04_dncnn_sar/raw_sentinel1/
 **/artifacts/
 **/checkpoints/
 
@@ -20,7 +21,7 @@ build/
 venv/
 env/
 
-# IDE
+# IDE/editor
 .vscode/
 .idea/
 *.swp
@@ -32,24 +33,3 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints/
-
-# OMC state
-.omc/
-**/.omc/
-.omx/
-# Local agent/runtime notes and raw run logs
-.claude/
-docs/handover/
-docs/vessl-logs/
-
-# Internal planning notes not part of the student-facing release
-docs/technical/*_plan.md
-docs/technical/*design_review.md
-docs/p01-schema8-full-run-summary.md
-
-# Instructor/cloud execution configs with local mount paths
-**/vessl_*.yaml
-**/run_vessl_*.sh
-
-# Superseded run summaries kept out of the public release surface
-docs/p03-radar-cube-doa-full-run-summary.md

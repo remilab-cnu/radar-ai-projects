@@ -3,8 +3,7 @@
 Date: 2026-05-02 KST
 
 This page summarizes the current full-data P01 result for classroom reporting.
-Use the project README for commands and `docs/technical/p01_detection_contract.md`
-for the data-schema details.
+Use the project README for commands and dataset details.
 
 ## Dataset contract
 

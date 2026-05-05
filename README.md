@@ -60,19 +60,30 @@ that the code path works before launching longer experiments.
 
 ---
 
-## Repository-level commands
+## Smoke-test commands
+
+Run a project smoke test before launching a longer experiment:
 
 ```bash
-# Smoke-test active projects. P03 uses mapping mode; P04 uses the available SAR smoke path.
-python scripts/smoke_all.py
+# P01
+cd projects/p01_unet_detector
+python train.py --generate --smoke
 
-# A slightly stronger two-epoch check for synthetic projects.
-python scripts/smoke_all.py --full
+# P02
+cd ../p02_resnet18_har
+python train.py --generate --smoke
 
-# Simulator and project-wiring contract tests.
-pytest -q tests/test_fmcw_simulator_contract.py tests/test_burst_simulator_contract.py tests/test_project_simulator_wiring.py
-pytest -q tests/test_p1_detection_quality_contract.py tests/test_p2_scatter_model_contract.py
+# P03
+cd ../p03_radar_cube_doa
+python train.py --mapping --generate --smoke
+
+# P04
+cd ../p04_dncnn_sar
+python train.py --generate --smoke
 ```
+
+Return to the repository root with `cd ../..` before switching to a new top-level
+folder.
 
 ---
 
@@ -173,9 +184,7 @@ radar-ai-projects/
 │   ├── p02_resnet18_har/
 │   ├── p03_radar_cube_doa/
 │   └── p04_dncnn_sar/
-├── docs/                    technical notes and result summaries
-├── scripts/                 repository-level utilities
-├── tests/                   simulator and project contract tests
+├── docs/                    optional reference notes and result summaries
 └── requirements.txt
 ```
 
