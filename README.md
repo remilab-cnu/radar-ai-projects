@@ -1,7 +1,7 @@
 # Radar Signal Processing with AI — Student Projects
 
 Graduate teaching repository for hands-on radar signal processing and AI
-projects.  The public course release contains four runnable projects, each with
+projects.  The public course release contains six runnable projects, each with
 its own data path, model, training script, and evaluation tools.
 
 ## What is included
@@ -12,6 +12,8 @@ its own data path, model, training script, and evaluation tools.
 | P02 | `projects/p02_resnet18_har/` | Micro-Doppler HAR | Classify six human activities from target-range micro-Doppler spectrograms. |
 | P03 | `projects/p03_radar_cube_doa/` | DoA and mapping | Compare angle FFT, MUSIC, and RadarCubeDoANet by projecting detections into maps. |
 | P04 | `projects/p04_dncnn_sar/` | SAR despeckling | Train/evaluate DnCNN-SAR on real Sentinel-1 image patches. |
+| P05 | `projects/p05_waveform_classification/` | Lightweight waveform classification | Classify radar waveform families from STFT images using MATLAB-reference-style synthetic examples. |
+| P06 | `projects/p06_target_signature_classification/` | Lightweight target signature classification | Classify simple target signatures from aspect-varying point-scatterer returns. |
 
 The projects are designed for reproducible classroom experiments.  They are not
 claims of operational radar-system performance.
@@ -57,6 +59,7 @@ that the code path works before launching longer experiments.
 | `ModuleNotFoundError` | Python packages are missing | Run `pip install -r requirements.txt` from the repo root |
 | `FileNotFoundError: data/*.h5` | Dataset has not been generated | Add `--generate` or run the project data-generation command |
 | P04 cannot find SAR source data | Sentinel-1 data is not mounted locally | Set `P04_SAR_DATA_ROOT` or pass `--data_root` |
+| P05/P06 checkpoint shape mismatch | Smoke checkpoints use smaller `base_ch` | Add `--base_ch 8` when evaluating a smoke checkpoint |
 
 ---
 
@@ -79,6 +82,14 @@ python train.py --mapping --generate --smoke
 
 # P04
 cd ../p04_dncnn_sar
+python train.py --generate --smoke
+
+# P05
+cd ../p05_waveform_classification
+python train.py --generate --smoke
+
+# P06
+cd ../p06_target_signature_classification
 python train.py --generate --smoke
 ```
 
@@ -152,6 +163,31 @@ python train.py --eval_only --checkpoint artifacts/best_model.pt
 Full P04 experiments require instructor-provided Sentinel-1 data and are usually
 run in a GPU environment.
 
+### P05 — Lightweight Radar Waveform Classification Example
+
+P05 follows MATLAB radar waveform-classification examples at a compact scale.
+It generates rectangular, LFM, Barker-coded, and noise-only baseband observations,
+converts them to STFT log-magnitude images, and compares a tiny CNN with
+handcrafted waveform descriptors.
+
+```bash
+cd projects/p05_waveform_classification
+python train.py --generate --smoke
+python evaluate_snr_sweep.py --checkpoint artifacts/best_model.pt --base_ch 8
+```
+
+### P06 — Lightweight Target Signature Classification Example
+
+P06 follows MATLAB radar target-classification examples at a compact scale.
+It generates aspect-varying signatures from simple point-scatterer target
+geometries, then compares a 1-D CNN with handcrafted return descriptors.
+
+```bash
+cd projects/p06_target_signature_classification
+python train.py --generate --smoke
+python evaluate_generalization.py --generate --checkpoint artifacts/best_model.pt --base_ch 8 --smoke
+```
+
 ---
 
 ## Shared simulator modules
@@ -165,6 +201,8 @@ run in a GPU environment.
 | `shared/doa_utils.py` | ULA steering vectors, beamforming, MUSIC, MVDR, and DoA metrics |
 | `shared/radar_scene.py` | 2-D radar scene and occupancy-grid utilities |
 | `shared/sar_simulator.py` | Simplified stripmap SAR teaching utilities |
+| `shared/waveform_library.py` | P05 lightweight waveform-family generation and STFT-image helpers |
+| `shared/target_signature.py` | P06 lightweight point-scatterer target-signature generation helpers |
 
 The shared FMCW simulator uses complex-baseband chirps and the mixer output
 `rx * conj(tx)`.  Carrier frequency is used for wavelength, phase, Doppler,
@@ -183,7 +221,9 @@ radar-ai-projects/
 │   ├── p01_unet_detector/
 │   ├── p02_resnet18_har/
 │   ├── p03_radar_cube_doa/
-│   └── p04_dncnn_sar/
+│   ├── p04_dncnn_sar/
+│   ├── p05_waveform_classification/
+│   └── p06_target_signature_classification/
 ├── docs/                    optional reference notes and result summaries
 └── requirements.txt
 ```

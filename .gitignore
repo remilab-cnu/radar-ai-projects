@@ -1,5 +1,6 @@
 # Generated data and checkpoints
 **/data/*.h5
+**/data_*/
 projects/p02_resnet18_har/data_stress_*/
 projects/p02_resnet18_har/data_pre_schema*/
 projects/p04_dncnn_sar/raw_sentinel1/
