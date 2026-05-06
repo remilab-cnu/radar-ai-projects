@@ -13,7 +13,7 @@ its own data path, model, training script, and evaluation tools.
 | P03 | `projects/p03_radar_cube_doa/` | DoA and mapping | Compare angle FFT, MUSIC, and RadarCubeDoANet by projecting detections into maps. |
 | P04 | `projects/p04_dncnn_sar/` | SAR despeckling | Train/evaluate DnCNN-SAR on real Sentinel-1 image patches. |
 | P05 | `projects/p05_waveform_classification/` | Lightweight waveform classification | Classify radar waveform families from STFT images using MATLAB-reference-style synthetic examples. |
-| P06 | `projects/p06_target_signature_classification/` | Lightweight target signature classification | Classify simple target signatures from aspect-varying point-scatterer returns. |
+| P06 | `projects/p06_target_signature_classification/` | Lightweight target signature classification | Classify simple target signatures from angle-dependent RCS-like point-scatterer returns. |
 
 The projects are designed for reproducible classroom experiments.  They are not
 claims of operational radar-system performance.
@@ -179,8 +179,10 @@ python evaluate_snr_sweep.py --checkpoint artifacts/best_model.pt --base_ch 8
 ### P06 — Lightweight Target Signature Classification Example
 
 P06 follows MATLAB radar target-classification examples at a compact scale.
-It generates aspect-varying signatures from simple point-scatterer target
-geometries, then compares a 1-D CNN with handcrafted return descriptors.
+It generates angle-dependent RCS-like signatures from simple point-scatterer
+target geometries, then compares a 1-D CNN with handcrafted return descriptors.
+The input is a magnitude/phase sequence from a complex monostatic return, not
+a SAR image or range-Doppler map.
 
 ```bash
 cd projects/p06_target_signature_classification

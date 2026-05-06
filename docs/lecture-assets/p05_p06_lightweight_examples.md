@@ -55,14 +55,19 @@ Reference:
 
 ### 정확한 과제 정의
 
-P06는 simple target geometry를 point scatterer로 표현하고, aspect angle 변화에 따른 complex
-monostatic response를 생성한 뒤 target signature family를 분류하는 lightweight example이다.
+P06는 simple target geometry를 point scatterer로 표현하고, aspect angle 변화에 따른
+angle-dependent RCS-like complex monostatic response를 생성한 뒤 target signature family를
+분류하는 lightweight example이다.
 기본 class는 `cylinder`, `cone`, `plate`이다.
 
 강조할 문장:
 
 > P06는 SAR image classification이 아니라 target signature classification이다. 모델은 aspect와
 > SNR이 바뀔 때 magnitude/phase return sequence가 어떻게 달라지는지를 이용해 class를 구분한다.
+
+기술적으로는 aspect angle `theta`에서의 coherent return `s(theta)`를 만들고, `|s(theta)|^2`를
+angle-dependent RCS-like pattern으로 해석할 수 있다. 다만 P06의 model input은 scalar RCS만이
+아니라 magnitude와 phase를 함께 담은 2-channel signature sequence이다.
 
 ### MATLAB reference와 Python equivalent
 
@@ -85,6 +90,8 @@ Reference:
 정확한 표현:
 
 - P06는 simple geometry 기반의 aspect-varying signature example이다.
+- P06는 angle-dependent RCS-like pattern을 쓰지만, full-wave EM/RCS solver나 측정 RCS database를
+  사용하지 않는다.
 - `plate` class는 cylinder/cone reference 흐름을 3-class 교육 예제로 확장하기 위한 lightweight class이다.
 - held-out aspect와 low-SNR 조건에서는 기본 IID test보다 성능이 다르게 보일 수 있다.
 - P04 SAR despeckling과 달리 P06는 image 복원이 아니라 1-D signature classification이다.

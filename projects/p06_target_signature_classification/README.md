@@ -1,9 +1,9 @@
 # P06: Lightweight Target Signature Classification Example
 
 P06 is a compact Python equivalent of MATLAB radar target-classification
-examples.  It generates aspect-dependent target signatures from simple point
-scatterer geometry and compares a handcrafted-feature baseline with a small 1-D
-CNN.
+examples.  It generates angle-dependent RCS-like target signatures from simple
+point-scatterer geometry and compares a handcrafted-feature baseline with a
+small 1-D CNN.
 
 ## MATLAB reference
 
@@ -22,6 +22,21 @@ Classify three target-signature families from aspect-varying complex returns:
 This is target signature classification, not SAR image despeckling and not DoA
 mapping.  The input is a two-channel magnitude/phase sequence produced by a
 small point-scatterer model.
+
+## Interpretation
+
+Each sample is an aspect-angle sweep of a lightweight monostatic scattering
+model:
+
+```text
+target class -> point scatterer geometry -> aspect angle theta
+             -> complex return s(theta)
+             -> magnitude/phase sequence
+```
+
+The squared magnitude of the return can be read as an angle-dependent
+RCS-like pattern.  P06 keeps phase as an additional channel, so the classifier
+sees a complex target-signature sequence rather than only scalar RCS values.
 
 ## Python equivalent
 
