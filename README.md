@@ -38,7 +38,18 @@ new PowerShell or Command Prompt.
 ```bash
 git clone https://github.com/remilab-cnu/radar-ai-projects.git
 cd radar-ai-projects
+python -m venv .venv
+source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 pip install -r requirements.txt
+```
+
+For CPU-only lab PCs, installing the CPU PyTorch wheel first avoids downloading
+large CUDA packages:
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements.txt --upgrade-strategy only-if-needed
 ```
 
 ### 3. Run one project smoke test
@@ -58,7 +69,8 @@ that the code path works before launching longer experiments.
 | `git` or `python` not found | Tool is not installed or PATH is not refreshed | Install the tool and open a new terminal |
 | `ModuleNotFoundError` | Python packages are missing | Run `pip install -r requirements.txt` from the repo root |
 | `FileNotFoundError: data/*.h5` | Dataset has not been generated | Add `--generate` or run the project data-generation command |
-| P04 cannot find SAR source data | Sentinel-1 data is not mounted locally | Set `P04_SAR_DATA_ROOT` or pass `--data_root` |
+| PyTorch install is very large | pip selected CUDA-enabled PyTorch packages | Use the CPU-only PyTorch install commands above on non-GPU PCs |
+| P04 full run cannot find SAR source data | Sentinel-1 data is not mounted locally | Set `P04_SAR_DATA_ROOT` or pass `--data_root`; `--smoke` works after a fresh clone using bundled real smoke data |
 | P05/P06 checkpoint shape mismatch | Smoke checkpoints use smaller `base_ch` | Add `--base_ch 8` when evaluating a smoke checkpoint |
 
 ---
@@ -83,6 +95,9 @@ python train.py --mapping --generate --smoke
 # P04
 cd ../p04_dncnn_sar
 python train.py --generate --smoke
+
+# P04 smoke uses real GRD patches when Sentinel-1 data is mounted.  If the
+# data is absent, it uses the bundled real smoke subset for path checks.
 
 # P05
 cd ../p05_waveform_classification
@@ -162,6 +177,13 @@ python train.py --eval_only --checkpoint artifacts/best_model.pt
 
 Full P04 experiments require instructor-provided Sentinel-1 data and are usually
 run in a GPU environment.
+
+To reproduce the bundled P04 smoke-sample evaluation without training:
+
+```bash
+python train.py --eval_only --data_dir sample_data \
+  --checkpoint sample_data/p04_smoke_best_model.pt --eval_samples 0
+```
 
 ### P05 — Lightweight Radar Waveform Classification Example
 

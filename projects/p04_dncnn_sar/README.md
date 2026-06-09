@@ -34,6 +34,13 @@ post-processing/display diagnostic.
 The generator expects Sentinel-1 products under `projects/p04_dncnn_sar/raw_sentinel1/`
 by default.  Override with `P04_SAR_DATA_ROOT` or `--data_root` when the data is
 mounted elsewhere.
+
+For clone-only environment checks, `python train.py --generate --smoke` remains
+runnable without locally mounted Sentinel-1 source data.  When the GRD source
+file is missing, smoke mode copies the bundled `sample_data/` real Sentinel-1
+smoke subset.  If that bundle is unavailable, it falls back to synthetic
+plumbing data with `source=synthetic_smoke`.
+
 `generate_data.py` writes:
 
 | Split | File | Contents |
@@ -69,8 +76,15 @@ Metric caveats for instructors:
 # Generate data and train the full lecture-scale checkpoint.
 python train.py --generate --epochs 100 --batch_size 32 --lr 5e-4 --no_amp
 
-# Fast local smoke check.
+# Fast local smoke check. Uses bundled real smoke data if Sentinel-1 is absent.
 python train.py --generate --smoke
+
+# Reproduce bundled smoke-sample evaluation with the reference checkpoint.
+python train.py --eval_only \
+  --data_dir sample_data \
+  --checkpoint sample_data/p04_smoke_best_model.pt \
+  --eval_samples 0 \
+  --ckpt_dir artifacts/sample_eval
 
 # Evaluation only with the default capped first-N setting.
 python train.py --eval_only --checkpoint artifacts/best_model.pt
@@ -101,6 +115,9 @@ faster capped first-N evaluation.
 ## Boundaries
 
 - Use real Sentinel-1 GRD/SLC data for Week 13 claims.
+- Treat bundled smoke outputs as sample-level checks, not full-test claims.
+- Treat synthetic smoke outputs as environment/path checks only if the real
+  smoke bundle is missing.
 - Do not present smoke-test outputs as full experiment results.
 - For new claims, regenerate or read the JSON/CSV artifacts instead of copying
   numbers by hand.

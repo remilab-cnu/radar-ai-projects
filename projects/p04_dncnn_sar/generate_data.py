@@ -4,13 +4,16 @@
 Two data sources:
 1. GRD: db (noisy) + db_filtered (clean) -> direct pair
 2. SLC: complex image -> |mag| log-dB = noisy, spatial multi-look = pseudo-clean
+3. Bundled real smoke fallback: clone-only sample data when --smoke is used and
+   the GRD source file is absent
+4. Synthetic fallback: plumbing data if the bundled real smoke files are absent
 
 Both are cut into 256x256 patches, normalized to [0,1], and stored in HDF5.
 
 Usage:
     python generate_data.py
     python generate_data.py --out_dir /custom/path
-    python generate_data.py --smoke   # quick GRD-only test
+    python generate_data.py --smoke
 
 Output:
     {out_dir}/real_despeckling_train.h5
@@ -20,7 +23,7 @@ Output:
 HDF5 Schema (per split):
     'noisy'  : (N, 1, 256, 256) float32 — speckled SAR [0, 1]
     'clean'  : (N, 1, 256, 256) float32 — pseudo-clean SAR [0, 1]
-    'source' : (N,) bytes          — b'grd' or b'slc'
+    'source' : (N,) bytes          — b'grd', b'slc', or b'synthetic_smoke'
 """
 
 import os
@@ -393,7 +396,8 @@ def main():
     parser.add_argument("--train_frac", type=float, default=0.8)
     parser.add_argument("--val_frac", type=float, default=0.1)
     parser.add_argument("--smoke", action="store_true",
-                        help="Quick test: skip SLC, use only GRD non-overlap")
+                        help="Quick test: use GRD non-overlap when present; "
+                             "otherwise write synthetic clone-safe smoke data")
     args = parser.parse_args()
 
     global GRD_PATH, SLC_DIRS
@@ -408,7 +412,7 @@ def main():
 
     rng = np.random.default_rng(args.seed)
 
-    print("=== Real Sentinel-1 SAR Despeckling Dataset Generation ===")
+    print("=== P04 SAR Despeckling Dataset Generation ===")
     print(f"  patch_size   = {args.patch_size}")
     print(f"  look_size    = {args.look_size}")
     print(f"  smooth       = {args.smooth_method}")
@@ -417,6 +421,30 @@ def main():
     print(f"  slc_dirs     = {len(SLC_DIRS)}")
     print(f"  output       = {args.out_dir}")
     print()
+
+    if args.smoke and not os.path.exists(GRD_PATH):
+        print("  Real Sentinel-1 GRD source is not present.")
+        from smoke_data import (
+            bundled_real_smoke_available,
+            copy_bundled_real_smoke_splits,
+            write_synthetic_despeckling_splits,
+        )
+        if bundled_real_smoke_available():
+            print("[Bundled real smoke data]")
+            copy_bundled_real_smoke_splits(args.out_dir)
+            print()
+            print("Done. Bundled smoke data is a small real Sentinel-1 subset, not the full P04 benchmark.")
+        else:
+            print("[Synthetic smoke fallback]")
+            print("  Writing synthetic P04-compatible HDF5 files for clone-time path checks.")
+            write_synthetic_despeckling_splits(
+                args.out_dir,
+                patch_size=args.patch_size,
+                seed=args.seed,
+            )
+            print()
+            print("Done. Synthetic smoke data is not valid for P04 Sentinel-1 result claims.")
+        return
 
     # ── Step 1: GRD patches ──
     print("[Step 1] Extracting GRD patches...")

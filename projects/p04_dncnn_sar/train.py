@@ -13,7 +13,6 @@ Examples
     # Full real-data training, generating patches first
     python train.py --generate --epochs 100 --batch_size 32 --lr 5e-4 --no_amp
 
-    # Fast CPU smoke check: GRD-only data generation + tiny model
     python train.py --generate --smoke
 
     # Evaluation only
@@ -34,14 +33,12 @@ from pathlib import Path
 import h5py
 import numpy as np
 import torch
-from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader, Dataset
 
 from model import (
     DnCNNSAR,
     DespecklingLoss,
     compute_enl,
-    compute_epi,
     compute_psnr,
     compute_ssim,
     count_parameters,
@@ -116,7 +113,7 @@ def train_one_epoch(model, loader, optimizer, criterion, device, scaler, use_amp
         noisy = noisy.to(device, non_blocking=True)
         clean = clean.to(device, non_blocking=True)
 
-        with autocast(enabled=use_amp):
+        with torch.amp.autocast(device_type=device.type, enabled=use_amp):
             pred = model(noisy)
             loss = criterion(pred, clean)
 
@@ -144,7 +141,7 @@ def validate_psnr(model, loader, criterion, device, use_amp=False):
         noisy = noisy.to(device, non_blocking=True)
         clean = clean.to(device, non_blocking=True)
 
-        with autocast(enabled=use_amp):
+        with torch.amp.autocast(device_type=device.type, enabled=use_amp):
             pred = model(noisy)
             loss = criterion(pred, clean)
 
@@ -496,6 +493,7 @@ def evaluate_full(
         },
     }
 
+    data_attrs = _h5_attrs(Path(data_path)) if data_path else {}
     eval_meta = {
         "n_eval": n_eval,
         "n_test_total": len(dataset),
@@ -508,14 +506,14 @@ def evaluate_full(
         "source_counts_evaluated": _source_counts(dataset, indices),
         "checkpoint": str(checkpoint_path) if checkpoint_path else "",
         "data_file": str(data_path or getattr(dataset, "h5_path", "")),
-        "data_attrs": _h5_attrs(Path(data_path)) if data_path else {},
+        "data_attrs": data_attrs,
         "config": config or {},
         "metric_notes": {
             "dncnn_raw": "Primary DnCNN output before post-processing.",
             "dncnn_clipped": "Diagnostic/display variant clipped to [0, 1]; do not silently replace raw metrics.",
             "enl_log_roi_proxy": "Smoothness proxy computed on normalized log/dB center ROI, not physical linear-intensity ENL.",
             "epi": "High-variance ratio metric; prefer robust stats/percentiles for interpretation.",
-            "targets": "Pseudo-clean Sentinel-1 multi-look targets, not true clean SAR ground truth.",
+            "targets": _target_note(data_attrs),
             "classical_baselines": "Lee/Frost/Median are applied in the same normalized log/dB domain as DnCNN.",
         },
     }
@@ -598,6 +596,12 @@ def _save_summary(summary: dict, path: str | Path) -> None:
     print(f"  Results saved to {path}")
 
 
+def _target_note(data_attrs: dict) -> str:
+    if data_attrs.get("data_type") == "synthetic_p04_smoke":
+        return "Synthetic smoke targets for clone-time plumbing checks, not Sentinel-1 SAR evidence."
+    return "Pseudo-clean Sentinel-1 multi-look targets, not true clean SAR ground truth."
+
+
 def _generate_real_data(args) -> None:
     """Invoke generate_data.py with the selected real-data options."""
     gen_path = Path(__file__).with_name("generate_data.py")
@@ -634,7 +638,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--generate", action="store_true", help="Generate real Sentinel-1 HDF5 data before training")
     parser.add_argument("--generate_real", action="store_true", help="Alias for --generate")
     parser.add_argument("--real_data", action="store_true", help="Compatibility no-op; P04 is now real-data only")
-    parser.add_argument("--smoke", action="store_true", help="Fast GRD-only smoke run with a tiny model")
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="Fast clone-safe smoke run with a tiny model; uses synthetic data when Sentinel-1 data is absent",
+    )
     parser.add_argument("--data_dir", type=str, default=None, help="HDF5 data directory (default: ./data)")
     parser.add_argument("--ckpt_dir", type=str, default=None, help="Checkpoint/artifact directory (default: ./artifacts)")
     parser.add_argument("--epochs", type=int, default=100)
@@ -708,8 +716,10 @@ def main() -> int:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     use_amp = not args.no_amp and device.type == "cuda"
+    train_attrs = _h5_attrs(train_path)
+    data_label = "Synthetic smoke" if train_attrs.get("data_type") == "synthetic_p04_smoke" else "Real Sentinel-1"
 
-    print("=== P04: DnCNN-SAR Despeckling (Real Sentinel-1) ===")
+    print(f"=== P04: DnCNN-SAR Despeckling ({data_label}) ===")
     print(f"  Device:     {device}")
     print(f"  Data dir:   {args.data_dir}")
     print(f"  Ckpt dir:   {args.ckpt_dir}")
@@ -771,7 +781,7 @@ def main() -> int:
     criterion = DespecklingLoss(w_char=args.w_char, w_ssim=args.w_ssim).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
-    scaler = GradScaler(enabled=use_amp)
+    scaler = torch.amp.GradScaler(device.type, enabled=use_amp)
 
     best_val_psnr = -float("inf")
     history = {"train_loss": [], "val_loss": [], "val_psnr": [], "lr": []}
